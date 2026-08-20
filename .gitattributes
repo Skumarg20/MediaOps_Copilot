@@ -1,0 +1,32 @@
+# Normalise every text file to LF in the repository AND in the working copy.
+#
+# This is not cosmetic. The repo is authored on Windows and runs on Linux:
+# `apps/api/docker-entrypoint.sh` is the container's ENTRYPOINT, and a CRLF
+# shebang makes Linux report `bad interpreter: /bin/sh^M` — so a fresh clone
+# would build an image that cannot start. `ml/synthetic_dataset.csv` is
+# regenerated in CI and compared with `git diff`, which a line-ending flip turns
+# into a spurious "dataset is stale" failure.
+#
+# `eol=lf` (rather than bare `text=auto`) keeps the working tree LF too, so what
+# is tested locally is byte-identical to what CI and the container see.
+* text=auto eol=lf
+
+# Shell scripts and Dockerfiles are executed by Linux tooling — never CRLF.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# Generated data compared byte-for-byte in CI.
+*.csv           text eol=lf
+*.json          text eol=lf
+
+# Binary: never touch.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.woff          binary
+*.woff2         binary
