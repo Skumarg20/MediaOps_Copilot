@@ -17,7 +17,13 @@ type Props = {
  * a rating on screen that the policy never received.
  */
 export function FeedbackButtons({ transactionId, existingScore, onRated }: Props) {
-  const [score, setScore] = useState<number | null>(existingScore ?? null);
+  // A row written before the score contract was fixed stores -1 for unhelpful.
+  // The migration rewrites those to 0, but normalising here too means a stale
+  // cache or an older API never renders a rated transaction as unrated.
+  const normalise = (value: number | null | undefined): FeedbackScore | null =>
+    value === null || value === undefined ? null : value === 1 ? 1 : 0;
+
+  const [score, setScore] = useState<FeedbackScore | null>(normalise(existingScore));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

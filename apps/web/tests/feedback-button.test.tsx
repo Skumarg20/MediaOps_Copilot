@@ -78,7 +78,17 @@ describe('FeedbackButtons', () => {
   });
 
   it('starts disabled when the transaction was already rated', () => {
-    render(<FeedbackButtons transactionId="tx-5" existingScore={-1} />);
+    render(<FeedbackButtons transactionId="tx-5" existingScore={0} />);
+
+    const unhelpful = screen.getByRole('button', { name: 'Mark answer unhelpful' });
+    expect(unhelpful).toHaveAttribute('aria-pressed', 'true');
+    expect(unhelpful).toBeDisabled();
+  });
+
+  it('renders a legacy -1 rating as unhelpful rather than as unrated', () => {
+    // Rows written before the binary contract was fixed store -1. Showing them
+    // as unrated would invite a second click the API would then reject.
+    render(<FeedbackButtons transactionId="tx-6" existingScore={-1} />);
 
     const unhelpful = screen.getByRole('button', { name: 'Mark answer unhelpful' });
     expect(unhelpful).toHaveAttribute('aria-pressed', 'true');

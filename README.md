@@ -210,7 +210,7 @@ triage ──► route ──► retrieve ──► reason ──► verify ─�
 | 7 | Explainability | `modules/explain/` | `rationale` on every response, rendered in the console |
 | 8 | Ops console | `apps/web` | Transaction feed, rationale panel, live RL chart, health pill |
 | 9 | CI/CD | `.github/workflows/ci.yml` | lint → test (with Postgres) → docker build → gated deploy |
-| 10 | Test automation | `apps/*/test*` | 153 tests; RL logic gets the most scrutiny |
+| 10 | Test automation | `apps/*/test*` | 157 tests; RL logic gets the most scrutiny |
 | 11 | SRE & observability | `src/utils/` | JSON logs keyed by `transaction_id`, real `/health` probes, `/metrics` |
 
 ---
@@ -255,11 +255,19 @@ instead — the behaviour the routing design depends on.
 | **State** | Triage class — `simple_lookup` \| `complex_diagnostic` \| `urgent_incident` |
 | **Action** | `(path, model)` ∈ `{vector, vectorless} × {llama3.2, qwen2.5}` — 4 arms, **masked to 2** when a rule pins the path |
 | **Policy** | ε-greedy, ε = 0.2 decaying to 0.05 as pulls accumulate |
-| **Reward** | `R = 10·feedback − latency_seconds − hallucination_penalty` |
+| **Reward** | `R = (feedback × 10) − latency_seconds − hallucination_penalty`, feedback ∈ {0, 1} |
 | **Update** | Incremental sample mean, `Q ← Q + (R − Q)/N` |
 
 The `10×` weight makes helpfulness dominate and latency the tie-breaker between paths of
-equal quality. Rewards are **legitimately negative** and nothing clamps at zero.
+equal quality. Rewards are **legitimately negative** and nothing clamps at zero: an
+unhelpful answer scores `0 × 10 − latency − penalty`, so a slow ungrounded one lands
+near −8 and pulls the arm well below the optimistic prior of 5.
+
+**On the score being `0` rather than `−1`.** The interface contract fixes it, and the
+reward formula consumes the wire value directly — so `0` has to mean "unhelpful" for the
+arithmetic to be the specified arithmetic. `−1` is still accepted and normalised to `0`,
+because silently 400-ing a rating an operator believed they gave is worse than accepting
+a legacy value.
 
 **Two-phase update.** Feedback is asynchronous and may never arrive:
 
@@ -404,7 +412,9 @@ abstention at `200`, because "I don't know" is a correct answer.
 <summary><code>POST /feedback</code></summary>
 
 ```jsonc
+// score is binary: 1 = helpful, 0 = unhelpful
 { "transaction_id": "b1f0…", "score": 1 }   // → { "reward": 8.06, "arm": "vectorless|llama3.2:3b", "arm_mean_reward": 7.4, "arm_pulls": 13 }
+{ "transaction_id": "b1f0…", "score": 0 }   // → { "reward": -0.94, … }  (0 × 10 − latency − penalty)
 ```
 
 `404` unknown transaction · `409` already rated (idempotent, policy untouched).
@@ -488,7 +498,7 @@ npm run test --workspace=apps/api
 npm run test --workspace=apps/web
 ```
 
-**153 tests.** No Ollama required — a deterministic fake adapter and a hand-authored
+**157 tests.** No Ollama required — a deterministic fake adapter and a hand-authored
 concept-space embedder make agent and retrieval tests fast and non-flaky.
 
 **Postgres is required for 63 of them.** The bandit's correctness depends on
@@ -497,19 +507,19 @@ round-tripping. A fake would agree with whatever the code does and prove none of
 so those suites run against a real database, each taking its own scratch schema pair
 and dropping it afterwards. Without a database they **skip with a printed reason**
 rather than failing, and CI asserts that they did *not* skip: a green run that tested
-nothing is worse than a red one. All 136 API tests have been run green against a real
+nothing is worse than a red one. All 139 API tests have been run green against a real
 Postgres 16, and the full path verified end to end against hosted llama-3.2-3b and
 qwen-2.5-7b through OpenRouter.
 
 | Suite | Tests | Needs PG | Covers |
 |---|---|---|---|
 | `bandit` | 23 | 14 | Reward arithmetic incl. negatives; incremental-mean correctness; ε=0 exploits, ε=1 explores; optimistic init sweeps every arm; masking survives ε=1; per-state independence; persistence across restarts |
-| `api` | 27 | all | Route contracts; 400/404/409; the rationale shape the console destructures; jsonb round-trip fidelity; **Ollama down → 200 + `degraded`**; empty index → forced vectorless; the tRPC surface |
+| `api` | 32 | all | Route contracts; 400/404/409; the rationale shape the console destructures; jsonb round-trip fidelity; **Ollama down → 200 + `degraded`**; empty index → forced vectorless; the tRPC surface |
 | `retrieval` | 26 | 11 | Both canonical examples; both floors; anchor resolution; hard-rule ordering |
 | `grounding` | 20 | — | Phantom citation → abstain; High/Medium banding; overlap cannot be inflated by repetition |
 | `agent` | 16 | 11 | ReAct parsing; multi-line answers; tool whitelist; step budget; prompt-injection containment |
 | `classifier` | 13 | — | Feature contract; per-class prediction; signed attributions |
-| `web` | 17 | — | Optimistic feedback + rollback; rationale panel; abstention styling |
+| `web` | 18 | — | Optimistic feedback + rollback; rationale panel; abstention styling |
 
 ---
 
