@@ -1,0 +1,100 @@
+# =============================================================================
+# MediaOps Copilot — requirements
+# =============================================================================
+#
+# This file is pip-installable (`pip install -r requirements.txt`) and doubles
+# as the single checklist of everything a machine needs to run this project.
+# Only the ML trainer is Python; the service itself is Node + Postgres, and
+# those prerequisites are listed below because pip cannot install them.
+#
+# -----------------------------------------------------------------------------
+# 1. SYSTEM PREREQUISITES  (install these first — not installable by pip)
+# -----------------------------------------------------------------------------
+#
+#   Required for every path:
+#     Node.js        >= 20.11   (22.x is what CI and the Docker images use)
+#     npm            >= 10      (ships with Node 20/22)
+#     Git            any recent version
+#
+#   Required unless you bring your own database:
+#     Docker Engine  >= 24  +  Docker Compose v2   (`docker compose version`)
+#     PostgreSQL     16      (only if running Postgres natively instead of via
+#                             compose; the app has NO fallback — no Postgres
+#                             means /health reports `down` and /query 503s)
+#
+#   Required only for the reference ML trainer (this file's packages):
+#     Python         >= 3.10   (CI pins 3.12)
+#     pip            >= 23
+#     # Skippable: `npm run ml:train` is a pure-Node trainer that writes the
+#     # same model.json from the same CSV, so Python is optional end to end.
+#
+#   Optional — local model runtime:
+#     Ollama         latest    (bundled by docker compose; install natively at
+#                               https://ollama.com only for non-Docker local dev)
+#
+# -----------------------------------------------------------------------------
+# 2. MODEL WEIGHTS  (pulled at runtime, not installed)
+# -----------------------------------------------------------------------------
+#
+#   LLM_PROVIDER=hybrid (default) or openrouter — ~270 MB local:
+#     ollama pull nomic-embed-text          # embeddings, always local
+#     + an OpenRouter API key: https://openrouter.ai/keys
+#
+#   LLM_PROVIDER=ollama — fully offline, no key, ~4.2 GB local:
+#     ollama pull nomic-embed-text
+#     ollama pull llama3.2:3b
+#     ollama pull qwen2.5:3b
+#
+#   Under Docker, prefix with: docker compose exec ollama <cmd>
+#
+# -----------------------------------------------------------------------------
+# 3. CONFIGURATION  (nothing runs without these files)
+# -----------------------------------------------------------------------------
+#
+#     cp apps/api/.env.example apps/api/.env
+#     cp apps/web/.env.example apps/web/.env
+#
+#   Then set OPENROUTER_API_KEY in apps/api/.env (or set LLM_PROVIDER=ollama to
+#   run keyless). For `docker compose`, the key is read from a root-level .env:
+#     echo "OPENROUTER_API_KEY=sk-or-..." > .env
+#   Never commit either file — .gitignore already excludes them.
+#
+# -----------------------------------------------------------------------------
+# 4. HARDWARE / NETWORK
+# -----------------------------------------------------------------------------
+#
+#     RAM    8 GB with hybrid; 16 GB recommended for LLM_PROVIDER=ollama
+#     Disk   ~2 GB (node_modules + images) + model weights from section 2
+#     Ports  3000 web · 8080 api · 5432 postgres · 11434 ollama
+#            (override the console with WEB_PORT=3001)
+#     Net    outbound HTTPS to openrouter.ai unless LLM_PROVIDER=ollama
+#
+# -----------------------------------------------------------------------------
+# 5. NODE DEPENDENCIES
+# -----------------------------------------------------------------------------
+#
+#   Declared in package.json / package-lock.json — installed with `npm ci`
+#   from the repo root (npm workspaces installs apps/api and apps/web together).
+#
+# -----------------------------------------------------------------------------
+# 6. RUN IT
+# -----------------------------------------------------------------------------
+#
+#   Docker (everything):        docker compose up --build
+#   Local dev:                  npm ci
+#                               docker compose up -d postgres
+#                               npm run migrate
+#                               npm run dev:api     # :8080
+#                               npm run dev:web     # :3000
+#   Tests:                      npm test
+#   Retrain (Node, no Python):  npm run ml:train
+#   Retrain (reference):        pip install -r requirements.txt
+#                               npm run ml:dataset && npm run ml:train:python
+#
+# =============================================================================
+# PYTHON PACKAGES — for ml/train_triage_classifier.py
+# =============================================================================
+
+numpy>=1.26,<3
+pandas>=2.1,<3
+scikit-learn>=1.4,<2

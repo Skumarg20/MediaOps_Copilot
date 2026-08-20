@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# A newer push to the same ref makes the older run irrelevant.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -39,10 +38,6 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      # The integration suites run against real Postgres. The bandit's
-      # correctness depends on `on conflict`, `returning`, and atomic
-      # increments, and the store depends on jsonb round-tripping — a fake would
-      # agree with whatever the code does and prove none of it.
       postgres:
         image: postgres:16-alpine
         env:
@@ -58,14 +53,13 @@ jobs:
           --health-retries 10
 
     env:
-      DB_CLIENT: pg
+      # Only what differs from the code defaults, plus the credentials that have
+      # to match the `postgres` service block above. DB_CLIENT, DB_PORT and
+      # DB_SSL restated knexfile.js defaults and did nothing.
       DB_HOST: localhost
-      DB_PORT: '5432'
       DB_USER: copilot
       DB_PASSWORD: copilot
       DB_DATABASE: mediaops_test
-      TEST_DB_DATABASE: mediaops_test
-      DB_SSL: 'false'
       # A green run that skipped every database-backed suite is worse than a red
       # one. This makes an unreachable Postgres fail loudly instead of silently.
       REQUIRE_POSTGRES: 'true'
@@ -83,9 +77,6 @@ jobs:
       - name: apply migrations
         run: npm run migrate --workspace=apps/api
 
-      # No Ollama in CI. The fake adapter and the fixed-vector embedder cover the
-      # agent and retrieval paths, so the suite is fast and non-flaky and the
-      # dependency-down cases are tested rather than skipped.
       - name: api suite (unit + integration)
         run: npm run test --workspace=apps/api
 
@@ -109,11 +100,8 @@ jobs:
           cache: pip
 
       - run: npm ci
-      - run: pip install -r ml/requirements.txt
+      - run: pip install -r requirements.txt
 
-      # Regenerate the dataset from the committed feature extractor, then train
-      # with real scikit-learn. Running this in CI is what stops model.json and
-      # metrics_report.md drifting from the code that produced them.
       - name: regenerate dataset
         run: npm run ml:dataset
 
@@ -128,9 +116,6 @@ jobs:
             exit 1
           fi
 
-      # The weights themselves are allowed to move (a different solver on a
-      # different platform will not land on identical floats); what must hold is
-      # that the retrained model still satisfies the serving contract.
       - name: verify the retrained model still serves
         run: npm run test --workspace=apps/api -- test/classifier.test.ts
 
@@ -150,8 +135,6 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # Built on every PR: a broken image is a broken build, caught before merge
-      # rather than at deploy.
       - name: build api image
         uses: docker/build-push-action@v6
         with:
@@ -217,7 +200,6 @@ jobs:
     name: deploy (mock)
     runs-on: ubuntu-latest
     needs: [test, build]
-    # Unreachable from a PR, and unreachable after a red test.
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
