@@ -2,6 +2,7 @@ import '@/otel/bootstrap.js';
 import { serve } from '@hono/node-server';
 import { trpcServer } from '@hono/trpc-server';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '@/config.js';
@@ -33,6 +34,9 @@ export type AppRouter = typeof appRouter;
  */
 const FORCED_EXIT_AFTER_GRACE_MS = 5_000;
 
+/** Comfortably above the largest legitimate body: a 2000-character query. */
+const MAX_REQUEST_BYTES = 64 * 1024;
+
 /**
  * Builds the Hono app.
  *
@@ -49,6 +53,13 @@ export function createApp(): Hono {
 			allowMethods: ['GET', 'POST', 'OPTIONS']
 		})
 	);
+
+	/**
+	 * A query is capped at 2000 characters, but zod only sees the body after it
+	 * has been read into memory. This caps it before that, so an oversized POST
+	 * costs a 413 rather than a buffer the size of whatever was sent.
+	 */
+	app.use('*', bodyLimit({ maxSize: MAX_REQUEST_BYTES, onError: (c) => c.json({ error: 'payload_too_large' }, 413) }));
 
 	app.use('*', otelMiddleware());
 
@@ -105,6 +116,19 @@ export function createApp(): Hono {
 	return app;
 }
 
+/**
+ * A rejection nobody caught kills the process on Node 20 by default, and it does
+ * it with a bare stack on stderr — outside the JSON stream, uncorrelated, and
+ * invisible to anything reading the logs. Logging it in the house format first
+ * is the difference between "the container restarted" and knowing why.
+ *
+ * The process still exits. Continuing after an unknown failure would leave the
+ * service in a state nothing has reasoned about.
+ */
+function logFatal(kind: 'unhandledRejection' | 'uncaughtException', error: unknown): void {
+	logger.error({ event: 'boot.failed', kind, error }, 'fatal: unhandled error');
+	setTimeout(() => process.exit(1), 100).unref();
+}
 async function main(): Promise<void> {
 	await buildContext();
 	const app = createApp();
@@ -126,6 +150,8 @@ async function main(): Promise<void> {
 		setTimeout(() => process.exit(1), FORCED_EXIT_AFTER_GRACE_MS).unref();
 	};
 
+	process.on('unhandledRejection', (reason) => logFatal('unhandledRejection', reason));
+	process.on('uncaughtException', (error) => logFatal('uncaughtException', error));
 	process.on('SIGTERM', () => shutdown('SIGTERM'));
 	process.on('SIGINT', () => shutdown('SIGINT'));
 }

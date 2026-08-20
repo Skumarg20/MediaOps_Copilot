@@ -214,7 +214,14 @@ export interface RewardPoint {
 	createdAt: string;
 }
 
-/** Reward time series for the console chart, oldest first. */
+/**
+ * Reward time series for the console chart, oldest first.
+ *
+ * The newest `limit` ratings are taken and then reversed for display. Ordering
+ * ascending before the limit would pin the chart to the first ratings ever
+ * recorded, so it would stop moving the moment the table passed `limit` rows.
+ * A trend view that quietly freezes is worse than no trend view.
+ */
 export async function getRewardSeries({ limit }: { limit: number }, trx: Knex = db): Promise<RewardPoint[]> {
 	const rows = (await trx('copilot.feedback as f')
 		.join('copilot.transaction as t', 't.id', 'f.transaction_id')
@@ -225,7 +232,7 @@ export async function getRewardSeries({ limit }: { limit: number }, trx: Knex = 
 			'f.reward as reward',
 			'f.created_at as created_at'
 		)
-		.orderBy('f.created_at', 'asc')
+		.orderBy('f.created_at', 'desc')
 		.limit(limit)) as Array<{
 		transactionId: string;
 		arm: string;
@@ -234,11 +241,13 @@ export async function getRewardSeries({ limit }: { limit: number }, trx: Knex = 
 		createdAt: Date;
 	}>;
 
-	return rows.map((row) => ({
-		transactionId: row.transactionId,
-		arm: row.arm,
-		state: row.state as TriageClass,
-		reward: row.reward,
-		createdAt: iso(row.createdAt)
-	}));
+	return rows
+		.reverse()
+		.map((row) => ({
+			transactionId: row.transactionId,
+			arm: row.arm,
+			state: row.state as TriageClass,
+			reward: row.reward,
+			createdAt: iso(row.createdAt)
+		}));
 }

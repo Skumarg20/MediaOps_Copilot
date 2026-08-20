@@ -683,11 +683,12 @@ Stated plainly, because a system that claims to never guess should not guess abo
 - **The demo is deliberately non-deterministic.** Roughly one draw in five, the bandit
   explores onto the vectorless path for that query and abstains. That is the design
   working, not a flake — but it means "run it once and look" can show either outcome.
-- **The bandit's read-modify-write is not yet atomic.** `update()` reads the current mean
-  and writes the new one in two statements. Single-process that is fine; with concurrent
-  replicas two simultaneous ratings for the same arm could interleave and lose one. The
-  fix is a single `update … set mean_reward = mean_reward + (? - mean_reward) / rated_pulls`
-  statement, which Postgres now makes possible — it was not, on SQLite.
+- **Write paths are transactional, single-node and multi-replica alike.** A rating and the
+  policy update it causes commit together, as do a pull and the transaction record it
+  belongs to — a half-written pair would either lose a rating for good (the row makes
+  every retry a 409) or leave a pull that nothing can ever rate. `update()` takes a row
+  lock on the arm, so two simultaneous ratings for the same arm serialise rather than one
+  silently overwriting the other.
 - **The test embedder is a hand-authored concept space**, not a learned one. It exists so
   CI can exercise the vector path deterministically without a model runtime — it is not a
   substitute for `nomic-embed-text` at runtime.

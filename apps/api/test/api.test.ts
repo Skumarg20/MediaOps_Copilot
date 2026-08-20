@@ -400,6 +400,40 @@ describe.skipIf(!hasPostgres)('api', () => {
 			expect(body.series).toHaveLength(1);
 		});
 
+		it('keeps the reward series moving once there are more ratings than the limit', async () => {
+			await useContext();
+
+			const rewards: number[] = [];
+			for (let i = 0; i < 3; i += 1) {
+				const { body: query } = await ask('what does error code RENDER_TIMEOUT mean');
+				const feedback = (await (await rate(query.transaction_id, i === 2 ? 0 : 1)).json()) as {
+					reward: number;
+				};
+				rewards.push(feedback.reward);
+			}
+
+			const body = (await (await app.request('/rl/stats?limit=2')).json()) as {
+				series: Array<{ reward: number }>;
+			};
+
+			// Ascending order before the limit would pin this to the first two ratings
+			// ever recorded, and the chart would never move again.
+			expect(body.series).toHaveLength(2);
+			expect(body.series.map((point) => point.reward)).toEqual(rewards.slice(-2));
+		});
+
+		it('refuses a body larger than any legitimate query before reading it', async () => {
+			await useContext();
+
+			const res = await app.request('/query', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ query: 'a'.repeat(200_000) })
+			});
+
+			expect(res.status).toBe(413);
+		});
+
 		it('probes real dependencies rather than returning a hardcoded 200', async () => {
 			await useContext();
 			const res = await app.request('/health');

@@ -1,3 +1,5 @@
+import type { Knex } from 'knex';
+
 /**
  * The vocabulary of the whole system. Every module speaks in these terms so
  * the verification plane never needs to know where evidence came from.
@@ -87,6 +89,12 @@ export interface Policy {
   /** Provisional phase: the pull happened, the reward has not arrived yet. */
   registerPull(state: TriageClass, action: Action): Promise<ArmStats>;
   snapshot(): Promise<ArmStats[]>;
+  /**
+   * A policy bound to `trx`, so a rating and the policy update it causes commit
+   * or roll back together. Without it a failed update leaves feedback recorded
+   * and the arm none the wiser, and the retry is refused as a duplicate.
+   */
+  withTransaction(trx: Knex): Policy;
 }
 
 export type GroundingVerdict = {

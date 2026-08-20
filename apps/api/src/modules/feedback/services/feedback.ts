@@ -1,4 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
+import { db } from '@/connections/index.js';
 import { getContext } from '@/context.js';
 import { rlService } from '@/modules/rl/index.js';
 import { getTransaction, hasFeedback, insertFeedback } from '@/modules/transaction/index.js';
@@ -10,6 +11,11 @@ import type { FeedbackScore } from '../schema.js';
  * Terminal phase of the two-phase RL update. Latency and the hallucination
  * penalty were measured at answer time; the operator rating completes the
  * reward that the provisional phase deliberately left open.
+ *
+ * The rating and the policy update it causes commit together or not at all. A
+ * rating written without its update would be lost for good: the row makes every
+ * retry a 409, so the arm would never see a reward the operator believes they
+ * gave it.
  */
 export async function recordFeedback({
 	transactionId,
@@ -39,12 +45,14 @@ export async function recordFeedback({
 		hallucinationPenalty: transaction.hallucination_penalty
 	});
 
-	const written = await insertFeedback({ transactionId, score, reward });
-	if (!written) {
-		throw new HTTPException(409, { message: 'Feedback already recorded; the policy was not updated' });
-	}
+	const armStats = await db.transaction(async (trx) => {
+		const written = await insertFeedback({ transactionId, score, reward }, trx);
+		if (!written) {
+			throw new HTTPException(409, { message: 'Feedback already recorded; the policy was not updated' });
+		}
 
-	const armStats = await ctx.bandit.update(transaction.triage_class, action, reward);
+		return ctx.bandit.withTransaction(trx).update(transaction.triage_class, action, reward);
+	});
 
 	logEvent(log, 'info', 'rl.updated', {
 		state: transaction.triage_class,

@@ -19,9 +19,13 @@ let sdk: NodeSDK | null = null;
  * Deferring the import until after `start()` keeps log correlation working.
  */
 function reportTelemetryEvent(level: 'info' | 'warn', fields: Record<string, unknown>): void {
-	void import('@/utils/index.js').then(({ logEvent, logger }) => {
-		logEvent(logger, level, 'dep.probe', { dependency: 'otel', ...fields });
-	});
+	void import('@/utils/index.js')
+		.then(({ logEvent, logger }) => {
+			logEvent(logger, level, 'dep.probe', { dependency: 'otel', ...fields });
+		})
+		.catch(() => {
+			/* Telemetry reporting its own status must never be what takes the process down. */
+		});
 }
 
 /**

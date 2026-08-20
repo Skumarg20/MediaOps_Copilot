@@ -75,10 +75,25 @@ export class EpsilonGreedyBandit implements Policy {
 		}
 	}
 
-	private async row(state: TriageClass, key: string): Promise<ArmStats> {
-		const found = (await this.trx('copilot.banditArm').where({ state, action: key }).first()) as
-			| ArmRow
-			| undefined;
+	/**
+	 * The same policy, reading and writing through `trx`.
+	 *
+	 * Arm statistics live in Postgres precisely so learning survives a restart;
+	 * that only holds if a rating and the update it causes land together. This is
+	 * what lets the caller put both inside one transaction.
+	 */
+	withTransaction(trx: Knex): EpsilonGreedyBandit {
+		return new EpsilonGreedyBandit({ ...this.opts, trx });
+	}
+
+	/**
+	 * `lock` takes a row lock for the read-modify-write in `update()`. Two ratings
+	 * for the same arm arriving together would otherwise both read the old mean
+	 * and the second write would silently discard the first.
+	 */
+	private async row(state: TriageClass, key: string, lock = false): Promise<ArmStats> {
+		const query = this.trx('copilot.banditArm').where({ state, action: key });
+		const found = (await (lock ? query.forUpdate() : query).first()) as ArmRow | undefined;
 		if (found) return toStats(found);
 
 		const seed = {
@@ -95,8 +110,7 @@ export class EpsilonGreedyBandit implements Policy {
 
 	private async statePulls(state: TriageClass): Promise<number> {
 		const row = (await this.trx('copilot.banditArm').where({ state }).sum({ total: 'pulls' }).first()) as
-			| { total: string | number | null }
-			| undefined;
+			{ total: string | number | null } | undefined;
 		return Number(row?.total ?? 0);
 	}
 
@@ -185,7 +199,7 @@ export class EpsilonGreedyBandit implements Policy {
 	 */
 	async update(state: TriageClass, action: Action, reward: number): Promise<ArmStats> {
 		const key = actionKey(action);
-		const current = await this.row(state, key);
+		const current = await this.row(state, key, true);
 
 		const ratedSamples = current.ratedPulls + 1;
 		const mean = ratedSamples <= 1 ? reward : current.meanReward + (reward - current.meanReward) / ratedSamples;

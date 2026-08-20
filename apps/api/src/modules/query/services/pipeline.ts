@@ -7,6 +7,7 @@ import { explainService } from '@/modules/explain/index.js';
 import { platformService } from '@/modules/platform/index.js';
 import { rlService } from '@/modules/rl/index.js';
 import { routingService, type PinDecision } from '@/modules/routing/index.js';
+import { db } from '@/connections/index.js';
 import { insertTransaction } from '@/modules/transaction/index.js';
 import { annotateActiveSpan, withSpan } from '@/otel/index.js';
 import { childLogger, logEvent, requestDuration, retrievalHits } from '@/utils/index.js';
@@ -40,19 +41,23 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	const log = childLogger(transactionId);
 	const started = Date.now();
 
-	const { anchors, triage } = await withSpan('copilot.triage', { 'copilot.transaction_id': transactionId }, async () => {
-		const resolvedAnchors = await routingService.extractAnchors({ query });
-		const incidentMatchCount = await platformService.countIncidentMatches({ query });
-		const prediction = ctx.classifier.predict(query, { anchors: resolvedAnchors, incidentMatchCount });
+	const { anchors, triage } = await withSpan(
+		'copilot.triage',
+		{ 'copilot.transaction_id': transactionId },
+		async () => {
+			const resolvedAnchors = await routingService.extractAnchors({ query });
+			const incidentMatchCount = await platformService.countIncidentMatches({ query });
+			const prediction = ctx.classifier.predict(query, { anchors: resolvedAnchors, incidentMatchCount });
 
-		annotateActiveSpan({
-			'copilot.triage_class': prediction.class,
-			'copilot.triage_confidence': prediction.confidence,
-			'copilot.incident_matches': incidentMatchCount
-		});
+			annotateActiveSpan({
+				'copilot.triage_class': prediction.class,
+				'copilot.triage_confidence': prediction.confidence,
+				'copilot.incident_matches': incidentMatchCount
+			});
 
-		return { anchors: resolvedAnchors, triage: prediction };
-	});
+			return { anchors: resolvedAnchors, triage: prediction };
+		}
+	);
 
 	logEvent(log, 'info', 'triage.classified', {
 		class: triage.class,
@@ -231,28 +236,33 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 		...(degradedReason ? { degradedReason } : {})
 	});
 
-	const armAfterPull = await ctx.bandit.registerPull(triage.class, decision.action);
-	rlService.recordPullMetric(triage.class, rlService.actionKey(decision.action), decision.exploring);
-	rationale.model.arm_pulls = armAfterPull.pulls;
+	await db.transaction(async (trx) => {
+		const pulled = await ctx.bandit.withTransaction(trx).registerPull(triage.class, decision.action);
+		rationale.model.arm_pulls = pulled.pulls;
 
-	await insertTransaction({
-		id: transactionId,
-		query,
-		answer,
-		path: usedPath,
-		model,
-		triageClass: triage.class,
-		latencyMs,
-		grounded: verdict.grounded,
-		overlapScore: verdict.overlap,
-		confidenceBand: verdict.band,
-		hallucinationPenalty,
-		exploring: decision.exploring,
-		degraded,
-		rationale,
-		citations
+		await insertTransaction(
+			{
+				id: transactionId,
+				query,
+				answer,
+				path: usedPath,
+				model,
+				triageClass: triage.class,
+				latencyMs,
+				grounded: verdict.grounded,
+				overlapScore: verdict.overlap,
+				confidenceBand: verdict.band,
+				hallucinationPenalty,
+				exploring: decision.exploring,
+				degraded,
+				rationale,
+				citations
+			},
+			trx
+		);
 	});
 
+	rlService.recordPullMetric(triage.class, rlService.actionKey(decision.action), decision.exploring);
 	requestDuration.observe({ route: '/query', path: usedPath, model }, latencyMs / 1000);
 
 	return {
