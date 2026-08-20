@@ -21,6 +21,7 @@ export interface PinDecision {
  * Anchors are resolved against real primary keys, not guessed. A token only
  * becomes an anchor if it exists in the store — which is what makes the pin a
  * fact rather than a heuristic.
+ * A number is only a job ID when it resolves, so "1802 seconds" never pins.
  */
 export async function extractAnchors({ query }: { query: string }): Promise<StructuredAnchors> {
 	const [jobIds, errorCodes] = await Promise.all([
@@ -31,11 +32,10 @@ export async function extractAnchors({ query }: { query: string }): Promise<Stru
 	const upper = query.toUpperCase();
 	const foundCodes = [...errorCodes].filter((code) => upper.includes(code)).sort();
 
-	// Numbers are only job IDs when they resolve; "1802 seconds" must not pin.
-	const numbers = query.match(/\b\d{1,10}\b/g) ?? [];
-	const hashed = (query.match(/#(\d{1,10})\b/g) ?? []).map((match) => match.slice(1));
-	const candidates = new Set([...numbers, ...hashed]);
-	const foundJobs = [...candidates].filter((candidate) => jobIds.has(candidate)).sort();
+	const numericTokens = query.match(/\b\d{1,10}\b/g) ?? [];
+	const hashedNumericTokens = (query.match(/#(\d{1,10})\b/g) ?? []).map((match) => match.slice(1));
+	const jobIdCandidates = new Set([...numericTokens, ...hashedNumericTokens]);
+	const foundJobs = [...jobIdCandidates].filter((candidate) => jobIds.has(candidate)).sort();
 
 	return { jobIds: foundJobs, errorCodes: foundCodes };
 }
@@ -51,6 +51,13 @@ export interface PinInput {
  * Stage 1 of routing. Only the genuinely uncertain residual reaches the bandit;
  * spending exploration budget on an exact key match would be strictly worse than
  * knowing the answer.
+ *
+ * Anchors are checked BEFORE vector availability. Both can be true at once, and
+ * when they are the exact match is the honest explanation: the query would have
+ * taken this path regardless of the index's health, so reporting a degradation
+ * would tell the operator the answer is a fallback when it is in fact the best
+ * available answer. Only once no anchor resolves does index health decide, and
+ * that case is a genuine degradation, labelled as one.
  */
 export function decidePin(input: PinInput): PinDecision {
 	if (input.forceVectorless) {
@@ -62,11 +69,6 @@ export function decidePin(input: PinInput): PinDecision {
 		};
 	}
 
-	// Anchors are checked BEFORE vector availability. Both can be true at once,
-	// and when they are, the exact match is the honest explanation: the query
-	// would have taken this path regardless of the index's health. Reporting a
-	// degradation instead would tell the operator the answer is a fallback when
-	// it is in fact the best available answer.
 	const { jobIds, errorCodes } = input.anchors;
 
 	if (jobIds.length > 0 && errorCodes.length > 0) {
@@ -96,8 +98,6 @@ export function decidePin(input: PinInput): PinDecision {
 		};
 	}
 
-	// No anchor resolved. Only now does index health decide the path — this is a
-	// genuine degradation, and it is labelled as one.
 	if (!input.vectorAvailable) {
 		return {
 			path: 'vectorless',

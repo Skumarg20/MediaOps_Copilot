@@ -76,10 +76,10 @@ export class OllamaAdapter implements LlmAdapter {
     }
 
     const started = Date.now();
-    const attempts = config.ollama.maxRetries + 1;
+    const maxGenerationAttempts = config.ollama.maxRetries + 1;
     let lastError: unknown;
 
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
+    for (let attempt = 0; attempt < maxGenerationAttempts; attempt += 1) {
       try {
         const body = await fetchJson<{ response?: string }>(
           `${this.baseUrl}/api/generate`,
@@ -108,8 +108,7 @@ export class OllamaAdapter implements LlmAdapter {
         };
       } catch (err) {
         lastError = err;
-        // A retry only helps a transient blip; the breaker handles the rest.
-        if (attempt === attempts - 1) break;
+        if (attempt === maxGenerationAttempts - 1) break;
       }
     }
 

@@ -12,6 +12,9 @@ export type Chunk = {
  * Heading-aware chunking. Splitting on headings first means a chunk is a
  * self-contained passage under a title a human can find in the source file —
  * which is what makes a citation verifiable rather than decorative.
+ *
+ * Each chunk carries its own heading inside the text, so an embedded chunk keeps
+ * its topic and an excerpt reads sensibly on its own in the console.
  */
 export function chunkMarkdown(
   docId: string,
@@ -31,8 +34,6 @@ export function chunkMarkdown(
         id: `${docId}#c${index}`,
         docId,
         heading: section.heading,
-        // The heading rides along in the text so an embedded chunk carries its
-        // own topic, and so an excerpt reads sensibly on its own in the console.
         text: section.heading ? `${section.heading}\n\n${body}` : body,
       });
       index += 1;
@@ -83,8 +84,6 @@ function splitToSize(body: string, size: number, overlap: number): string[] {
   for (const paragraph of paragraphs) {
     if (paragraph.length > size) {
       flush();
-      // A single oversized paragraph is split on sentence boundaries rather
-      // than mid-word, so the excerpt still reads as prose.
       for (const piece of packSentences(paragraph, size, overlap)) out.push(piece);
       buffer = '';
       continue;

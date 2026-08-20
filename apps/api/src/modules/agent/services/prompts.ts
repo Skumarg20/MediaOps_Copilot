@@ -30,6 +30,16 @@ export function renderEvidenceBlock(evidence: Evidence[]): string {
     .join('\n\n');
 }
 
+/**
+ * Assembles the per-turn prompt.
+ *
+ * The evidence ids are restated as a closed list because that measurably reduces
+ * invented ones: a 3B model observed live cited `evidence:RENDER_TIMEOUT`, having
+ * generalised the shape of the system prompt example rather than copying an id it
+ * had been given. The citation validator catches that with certainty, but an
+ * abstention the operator did not need is still a worse answer, and helping the
+ * model copy correctly costs one line and weakens no gate.
+ */
 export function buildPrompt(opts: {
   query: string;
   evidence: Evidence[];
@@ -42,15 +52,9 @@ export function buildPrompt(opts: {
     'EVIDENCE:',
     renderEvidenceBlock(opts.evidence),
     '',
-    // Restating the ids as a closed list measurably reduces invented ones. A 3B
-    // model observed live cited `evidence:RENDER_TIMEOUT` — it generalised the
-    // shape of the example in the system prompt rather than copying an id it had
-    // been given. The citation validator catches that with certainty, but an
-    // abstention the operator did not need is still a worse answer, and helping
-    // the model copy correctly costs one line and weakens no gate.
     opts.evidence.length > 0
       ? `VALID CITATION IDS — copy these exactly, never invent others:\n${opts.evidence
-          .map((e) => e.id)
+          .map((evidenceItem) => evidenceItem.id)
           .join('\n')}`
       : '',
     '',
@@ -78,6 +82,6 @@ export function templateAnswerFromEvidence(evidence: Evidence[]): { answer: stri
   const body = usable.map((e) => `${e.text.trim()} [${e.id}]`).join('\n\n');
   return {
     answer: `Answering directly from the structured record; the model runtime is unavailable.\n\n${body}`,
-    citedIds: usable.map((e) => e.id),
+    citedIds: usable.map((evidenceItem) => evidenceItem.id),
   };
 }

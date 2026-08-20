@@ -21,8 +21,8 @@ export class CircuitBreaker {
 
 	get isOpen(): boolean {
 		if (this.failures < this.threshold) return false;
-		if (Date.now() - this.openedAt >= this.resetMs) return false; // half-open
-		return true;
+		const readyToProbeAgain = Date.now() - this.openedAt >= this.resetMs;
+		return !readyToProbeAgain;
 	}
 
 	recordSuccess(): void {

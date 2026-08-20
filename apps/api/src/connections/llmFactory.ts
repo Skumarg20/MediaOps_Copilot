@@ -11,10 +11,13 @@ import { OpenRouterAdapter } from './openrouter.js';
  * The choice is a composition detail, not a behavioural one: every caller is
  * written against `LlmAdapter`, so the ReAct loop, the grounding gate, the
  * bandit, and every route are identical whichever branch runs.
+ *
+ * `hybrid` without a key downgrades to the local runtime and says so at warn
+ * level, because an operator seeing local latency deserves to know why.
  */
 export function createLlmAdapter(): LlmAdapter {
 	const ollama = new OllamaAdapter();
-	const hasKey = Boolean(process.env.OPENROUTER_API_KEY);
+	const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY);
 
 	switch (config.llmProvider) {
 		case 'ollama':
@@ -22,7 +25,6 @@ export function createLlmAdapter(): LlmAdapter {
 			return ollama;
 
 		case 'openrouter':
-			// Generation hosted, embeddings still local — OpenRouter serves none.
 			logEvent(logger, 'info', 'dep.probe', {
 				dependency: 'llm',
 				provider: 'openrouter',
@@ -33,9 +35,7 @@ export function createLlmAdapter(): LlmAdapter {
 
 		case 'hybrid':
 		default:
-			if (!hasKey) {
-				// Falling back silently would be worse than either choice: the
-				// operator would see local latency and wonder why.
+			if (!hasOpenRouterKey) {
 				logEvent(logger, 'warn', 'dep.probe', {
 					dependency: 'llm',
 					provider: 'ollama',

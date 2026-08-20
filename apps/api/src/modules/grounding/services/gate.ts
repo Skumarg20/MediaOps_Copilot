@@ -11,6 +11,11 @@ export const ABSTENTION_ANSWER =
  * Gates 3 and 4 of the defence-in-depth chain. Gate 1 (the retrieval floor) and
  * gate 2 (the evidence-only prompt) have already run upstream — three of the
  * four gates fire before the model can speak.
+ *
+ * Gate 3 rejects phantom citations, which is not a similarity judgement: the id
+ * either exists in the evidence set or it was invented. Gate 4 then measures
+ * overlap against the *cited* evidence only — scoring against everything
+ * retrieved would let a model cite one item and borrow support from the rest.
  */
 export class LexicalGrounder implements Grounder {
   score(answer: string, citedIds: string[], evidence: Evidence[]): GroundingVerdict {
@@ -42,8 +47,6 @@ export class LexicalGrounder implements Grounder {
 
     const { valid, invalid } = validateCitations(citedIds, evidence);
 
-    // Gate 3: a phantom citation is fatal on its own. This is not a similarity
-    // judgement — the id either exists in the evidence set or it was invented.
     if (invalid.length > 0) {
       groundingFailures.inc({ reason: 'phantom_citation' });
       return {
@@ -68,10 +71,7 @@ export class LexicalGrounder implements Grounder {
       };
     }
 
-    // Gate 4: overlap is measured against the *cited* evidence only. Scoring
-    // against everything retrieved would let a model cite one item and borrow
-    // support from the rest.
-    const citedTexts = evidence.filter((e) => valid.includes(e.id)).map((e) => e.text);
+    const citedTexts = evidence.filter((item) => valid.includes(item.id)).map((item) => item.text);
     const overlap = lexicalOverlap(trimmed, citedTexts);
 
     if (overlap < config.grounding.mediumBand) {

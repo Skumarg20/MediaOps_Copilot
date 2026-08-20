@@ -51,8 +51,6 @@ export function TransactionTable({ limit = 25, pendingQuery, onRated }: Props) {
             key={tx.id}
             transaction={tx}
             onRated={() => {
-              // Revalidate the feed so the row's reward badge appears, and let
-              // the page revalidate the RL panel alongside it.
               void mutate();
               onRated?.();
             }}

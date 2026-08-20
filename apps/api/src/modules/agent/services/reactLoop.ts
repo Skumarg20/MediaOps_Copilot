@@ -19,16 +19,23 @@ export type ParsedTurn = {
 /**
  * Tolerant parser. A 3B model will drift from any format eventually; the loop
  * must degrade to an honest abstention rather than crash on a malformed turn.
+ *
+ * When a turn contains BOTH an Action tool call and a finished Answer — which a
+ * small model does routinely — the answer wins. That turn is self-contradictory
+ * and the two readings are not equally safe: dispatching the tool would discard
+ * an answer the model already committed to and fire a *mutating* action nobody
+ * asked for, while taking the answer costs nothing, since the grounding gate
+ * rejects it moments later if it turns out to be ungrounded.
  */
 export function parseTurn(raw: string): ParsedTurn {
   const text = raw.trim();
-  const grab = (label: string): string => {
-    const re = new RegExp(`^\\s*${label}\\s*:\\s*(.*)$`, 'im');
-    return re.exec(text)?.[1]?.trim() ?? '';
+  const valueAfterLabel = (label: string): string => {
+    const labelledLinePattern = new RegExp(`^\\s*${label}\\s*:\\s*(.*)$`, 'im');
+    return labelledLinePattern.exec(text)?.[1]?.trim() ?? '';
   };
 
-  const thought = grab('Thought');
-  const action = grab('Action');
+  const thought = valueAfterLabel('Thought');
+  const action = valueAfterLabel('Action');
 
   const answerMatch = /^[ \t]*Answer[ \t]*:[ \t]*([\s\S]*?)(?=\n[ \t]*Citations[ \t]*:|(?![\s\S]))/im.exec(
     text,
@@ -41,15 +48,6 @@ export function parseTurn(raw: string): ParsedTurn {
       ? { name: toolMatch[1] as string, arg: (toolMatch[2] ?? '').trim() }
       : null;
 
-  // A small model routinely emits BOTH an Action tool call and a finished
-  // Answer in one turn — observed live: `Action: restart_render(482)` followed
-  // by a complete, correctly cited answer to a purely diagnostic question.
-  //
-  // That turn is self-contradictory, and the two readings are not equally safe.
-  // Dispatching the tool discards an answer the model already committed to, and
-  // would fire a *mutating* action nobody asked for. Taking the answer costs
-  // nothing that matters: if it turns out to be ungrounded, the grounding gate
-  // rejects it a few lines later. So when both are present, the answer wins.
   const answersOutright = answer.length > 0;
   const toolCall = answersOutright ? null : parsedToolCall;
 

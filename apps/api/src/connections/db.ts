@@ -20,6 +20,14 @@ const {
 
 const MAX_POOL_SIZE = PROJECT_ENV === 'production' ? 50 : 2;
 
+/**
+ * Pinned rather than left to Postgres's default `"$user", public`. That default
+ * resolves `$user` to the `copilot` schema whenever the DB user shares its name,
+ * so an unqualified reference added later would land somewhere surprising. Every
+ * query in this codebase is schema-qualified today, which makes this belt-and-braces.
+ */
+const EXPLICIT_PUBLIC_SEARCH_PATH = ['public'];
+
 export let db: Knex = knex({
 	client: DB_CLIENT,
 	connection: {
@@ -31,11 +39,7 @@ export let db: Knex = knex({
 		...(DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {})
 	},
 	pool: { min: 1, max: MAX_POOL_SIZE },
-	// Every query in this codebase is schema-qualified, so this is belt-and-
-	// braces — but the default `"$user", public` resolves `$user` to the
-	// `copilot` schema whenever the DB user shares its name, and an unqualified
-	// reference added later would land somewhere surprising. Pin it.
-	searchPath: ['public'],
+	searchPath: EXPLICIT_PUBLIC_SEARCH_PATH,
 	...knexStringcase()
 });
 

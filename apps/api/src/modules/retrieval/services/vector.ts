@@ -85,6 +85,10 @@ export class VectorRetriever implements Retriever {
     }
   }
 
+  /**
+   * The similarity floor is the first line of hallucination defence: below it the
+   * path returns NO evidence rather than its best guess, and no model runs.
+   */
   async retrieve(query: string, ctx: QueryContext): Promise<Evidence[]> {
     if (this.index.length === 0) {
       retrievalHits.observe({ path: this.name }, 0);
@@ -112,12 +116,10 @@ export class VectorRetriever implements Retriever {
       .sort((a, b) => b.score - a.score)
       .slice(0, config.retrieval.topK);
 
-    // The similarity floor is the first line of hallucination defence: below it
-    // the path returns NO evidence rather than its best guess, and no model runs.
-    const passing = scored.filter((s) => s.score >= config.retrieval.vectorFloor);
+    const aboveSimilarityFloor = scored.filter((hit) => hit.score >= config.retrieval.vectorFloor);
 
-    retrievalHits.observe({ path: this.name }, passing.length);
-    if (passing.length === 0) {
+    retrievalHits.observe({ path: this.name }, aboveSimilarityFloor.length);
+    if (aboveSimilarityFloor.length === 0) {
       logEvent(logger, 'info', 'retrieval.floor_miss', {
         path: this.name,
         top_score: Number((scored[0]?.score ?? 0).toFixed(4)),
@@ -126,7 +128,7 @@ export class VectorRetriever implements Retriever {
       return [];
     }
 
-    return passing.map(({ chunk, score }) => ({
+    return aboveSimilarityFloor.map(({ chunk, score }) => ({
       id: chunk.id,
       source: 'vector' as const,
       text: chunk.text,

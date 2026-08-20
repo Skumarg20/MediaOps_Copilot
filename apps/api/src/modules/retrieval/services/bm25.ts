@@ -55,11 +55,13 @@ export class Bm25Index {
     this.avgLength = this.docs.length === 0 ? 0 : total / this.docs.length;
   }
 
+  /**
+   * Probabilistic IDF with the +1 shift that keeps common terms non-negative.
+   */
   private idf(term: string): number {
     const n = this.docs.length;
     const df = this.df.get(term) ?? 0;
     if (df === 0) return 0;
-    // Probabilistic IDF with the +1 shift that keeps common terms non-negative.
     return Math.log(1 + (n - df + 0.5) / (df + 0.5));
   }
 

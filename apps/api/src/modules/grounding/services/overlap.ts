@@ -1,14 +1,17 @@
 import { STOPWORDS } from '@/utils/index.js';
 
+/**
+ * Lowercased content words, with citation markers stripped first: markers are
+ * formatting, not content, and counting them would let a model inflate its own
+ * overlap score simply by citing more.
+ */
 export function contentTokens(text: string): string[] {
   return text
     .toLowerCase()
-    // Citation markers are formatting, not content — counting them would let a
-    // model inflate its own overlap score by citing more.
     .replace(/\[[^\]]*\]/g, ' ')
     .replace(/[^a-z0-9_\s-]/g, ' ')
     .split(/\s+/)
-    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
+    .filter((token) => token.length > 2 && !STOPWORDS.has(token));
 }
 
 /**
@@ -19,6 +22,9 @@ export function contentTokens(text: string): string[] {
  * it, costs a second generation, and is unfalsifiable. This is cheap,
  * deterministic, unit-testable, and fails in the safe direction — heavy
  * paraphrase reads as low-confidence rather than invention reading as fact.
+ *
+ * Coverage is counted over unique tokens — types, not tokens — so repeating one
+ * supported word twenty times cannot manufacture support the evidence never gave.
  */
 export function lexicalOverlap(answer: string, evidenceTexts: string[]): number {
   const answerTokens = contentTokens(answer);
@@ -30,10 +36,8 @@ export function lexicalOverlap(answer: string, evidenceTexts: string[]): number 
   }
   if (evidenceVocab.size === 0) return 0;
 
-  // Types, not tokens: repeating one supported word twenty times must not
-  // manufacture support the evidence never gave.
   const uniqueAnswerTokens = [...new Set(answerTokens)];
-  const covered = uniqueAnswerTokens.filter((t) => evidenceVocab.has(t)).length;
+  const coveredTokenCount = uniqueAnswerTokens.filter((token) => evidenceVocab.has(token)).length;
 
-  return Number((covered / uniqueAnswerTokens.length).toFixed(4));
+  return Number((coveredTokenCount / uniqueAnswerTokens.length).toFixed(4));
 }

@@ -16,17 +16,21 @@ const TRIAGE_LABEL: Record<string, string> = {
   urgent_incident: 'incident',
 };
 
+/**
+ * One transaction in the feed.
+ *
+ * Ungrounded answers get a distinct amber treatment so an abstention reads as
+ * deliberate honesty, not as an error the operator should chase.
+ */
 export function TransactionRow({ transaction: tx, onRated }: Props) {
   const [expanded, setExpanded] = useState(false);
 
-  // Ungrounded answers get a distinct amber treatment so an abstention reads as
-  // deliberate honesty, not as an error the operator should chase.
-  const tone = tx.grounded
+  const abstentionAwareTone = tx.grounded
     ? 'border-ink-700'
     : 'border-signal-warn/40 bg-signal-warn/[0.04]';
 
   return (
-    <li className={`rounded-md border ${tone} bg-ink-900/40`}>
+    <li className={`rounded-md border ${abstentionAwareTone} bg-ink-900/40`}>
       <div className="flex flex-col gap-2 px-4 py-3">
         <div className="flex items-start justify-between gap-4">
           <button

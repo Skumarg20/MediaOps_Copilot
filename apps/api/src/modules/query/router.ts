@@ -12,6 +12,14 @@ import { NoPathAvailableError, queryService } from './services/index.js';
  */
 export const queryRoutes = new Hono();
 
+/**
+ * POST /query.
+ *
+ * Validation failures come back with field-level details so the console can
+ * render inline validation rather than a generic failure. A `NoPathAvailableError`
+ * becomes a 503 rather than a guessed answer: nothing honest can be returned, and
+ * serving a guess would violate the system's central promise.
+ */
 queryRoutes.post('/', async (c) => {
 	const body = await c.req.json().catch(() => null);
 	const parsed = querySchema.safeParse(body);
@@ -20,8 +28,6 @@ queryRoutes.post('/', async (c) => {
 		return c.json(
 			{
 				error: 'invalid_request',
-				// Field-level errors so the console can render inline validation
-				// rather than a generic failure.
 				details: parsed.error.issues.map((issue) => ({
 					field: issue.path.join('.') || '(body)',
 					message: issue.message
@@ -35,8 +41,6 @@ queryRoutes.post('/', async (c) => {
 		return c.json(await queryService.handleQuery({ query: parsed.data.query }), 200);
 	} catch (error) {
 		if (error instanceof NoPathAvailableError) {
-			// Nothing honest can be returned, so nothing is returned. Serving a
-			// guess here would violate the system's central promise.
 			throw new HTTPException(503, { message: error.message });
 		}
 		throw error;

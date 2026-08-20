@@ -60,6 +60,15 @@ export class VectorlessRetriever implements Retriever {
 		return docs.length;
 	}
 
+	/**
+	 * Two floors, because a raw score floor alone is not enough. A single
+	 * corpus-wide term ("render") can carry a document over any score threshold,
+	 * which is how an open-ended question like "why is my render slower than usual"
+	 * gets answered with a plausible-looking error-code definition that does not
+	 * address it. Requiring the hit to cover a real share of the query's content
+	 * terms is what makes this path abstain instead — the outcome the routing
+	 * design depends on.
+	 */
 	async retrieve(query: string, ctx: QueryContext): Promise<Evidence[]> {
 		const exact = await this.exactHits(ctx);
 		if (exact.length > 0) {
@@ -75,19 +84,12 @@ export class VectorlessRetriever implements Retriever {
 
 		const hits = this.bm25.search(query, config.retrieval.topK);
 
-		// Two floors, because a raw score floor alone is not enough. A single
-		// corpus-wide term ("render") can carry a document over any score
-		// threshold, which is how an open-ended question like "why is my render
-		// slower than usual" gets answered with a plausible-looking error-code
-		// definition that does not address it. Requiring the hit to cover a real
-		// share of the query's content terms is what makes this path abstain
-		// instead — the outcome the routing design depends on.
-		const passing = hits.filter(
+		const aboveScoreAndCoverageFloors = hits.filter(
 			(hit) => hit.score >= config.retrieval.bm25Floor && hit.coverage >= config.retrieval.bm25Coverage
 		);
-		retrievalHits.observe({ path: this.name }, passing.length);
+		retrievalHits.observe({ path: this.name }, aboveScoreAndCoverageFloors.length);
 
-		if (passing.length === 0) {
+		if (aboveScoreAndCoverageFloors.length === 0) {
 			logEvent(logger, 'info', 'retrieval.floor_miss', {
 				path: this.name,
 				mode: 'bm25',
@@ -99,7 +101,7 @@ export class VectorlessRetriever implements Retriever {
 			return [];
 		}
 
-		return passing.map((hit) => ({
+		return aboveScoreAndCoverageFloors.map((hit) => ({
 			id: hit.id,
 			source: 'vectorless' as const,
 			text: hit.text,
@@ -111,6 +113,9 @@ export class VectorlessRetriever implements Retriever {
 	/**
 	 * Anchors were already resolved against real primary keys by the hard router,
 	 * so a hit here is definitionally correct — not a heuristic guess.
+	 *
+	 * A failure reason is a foreign key into the glossary; following it turns
+	 * "job 482 failed with RENDER_TIMEOUT" into an answer that also explains it.
 	 */
 	private async exactHits(ctx: QueryContext): Promise<Evidence[]> {
 		const out: Evidence[] = [];
@@ -152,8 +157,6 @@ export class VectorlessRetriever implements Retriever {
 				}
 			});
 
-			// A failure reason is a foreign key into the glossary; following it turns
-			// "job 482 failed with RENDER_TIMEOUT" into an answer that also explains it.
 			if (row.failureReason) {
 				const code = await platformService.getErrorCode({ code: row.failureReason });
 				if (code && !out.some((evidence) => evidence.id === `errorCode:${code.code}`)) {

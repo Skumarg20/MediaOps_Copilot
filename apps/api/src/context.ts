@@ -38,6 +38,13 @@ export interface BuildContextOptions {
 	skipSeed?: boolean;
 }
 
+/**
+ * Builds the singleton context.
+ *
+ * A failed vector index is non-fatal: the service starts degraded and serves
+ * vectorless answers rather than refusing to boot, because start-up order is not
+ * a correctness dependency.
+ */
 export async function buildContext(opts: BuildContextOptions = {}): Promise<AppContext> {
 	if (!opts.skipSeed) await platformService.seedReferenceData();
 
@@ -50,13 +57,10 @@ export async function buildContext(opts: BuildContextOptions = {}): Promise<AppC
 	await bandit.init();
 
 	if (!opts.skipIndex) {
-		// Indexing failure is non-fatal: the service starts degraded and serves
-		// vectorless answers rather than refusing to start. Start-up order is not a
-		// correctness dependency.
-		const result = await vector.build();
-		if (result.error) {
+		const vectorIndexResult = await vector.build();
+		if (vectorIndexResult.error) {
 			logEvent(logger, 'warn', 'boot.indexed', {
-				error: result.error,
+				error: vectorIndexResult.error,
 				note: 'vector path disabled; serving vectorless'
 			});
 		}

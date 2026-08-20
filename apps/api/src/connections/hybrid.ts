@@ -25,6 +25,12 @@ export class HybridLlmAdapter implements LlmAdapter {
 		private readonly generationFallback?: LlmAdapter
 	) {}
 
+	/**
+	 * Generation with one retry against the fallback runtime.
+	 *
+	 * When both runtimes are gone the *original* hosted failure is surfaced as the
+	 * message: the fallback being down too is a detail, not the cause.
+	 */
 	async generate(req: GenerateRequest): Promise<GenerateResult> {
 		try {
 			return await this.generation.generate(req);
@@ -39,8 +45,6 @@ export class HybridLlmAdapter implements LlmAdapter {
 			try {
 				return await this.generationFallback.generate(req);
 			} catch (fallbackError) {
-				// Both runtimes are gone. Surface the *original* failure: the
-				// fallback being down too is a detail, not the cause.
 				throw new LlmUnavailableError(
 					`generation unavailable from hosted provider and local fallback for ${req.model}`,
 					{ primary: error, fallback: fallbackError }
@@ -66,6 +70,11 @@ export class HybridLlmAdapter implements LlmAdapter {
 		return new Set([...primary, ...fallback]);
 	}
 
+	/**
+	 * Health of the composition rather than of its parts: a degraded hosted
+	 * provider is not a degraded system while the local runtime can still
+	 * generate, so the reported status is what the pair can do together.
+	 */
 	async health(): Promise<{ generation: DependencyStatus; embedding: DependencyStatus }> {
 		const [generationHealth, embeddingHealth, fallbackHealth] = await Promise.all([
 			this.generation.health(),
@@ -73,9 +82,7 @@ export class HybridLlmAdapter implements LlmAdapter {
 			this.generationFallback?.health()
 		]);
 
-		// A degraded hosted provider is not a degraded system when the local
-		// runtime can still generate — report what the *composition* can do.
-		const generation =
+		const compositeGenerationStatus =
 			generationHealth.generation.status === 'up'
 				? generationHealth.generation
 				: fallbackHealth?.generation.status === 'up'
@@ -90,7 +97,7 @@ export class HybridLlmAdapter implements LlmAdapter {
 						};
 
 		return {
-			generation,
+			generation: compositeGenerationStatus,
 			embedding: { ...embeddingHealth.embedding, name: 'llm.embedding' }
 		};
 	}

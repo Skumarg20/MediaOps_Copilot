@@ -19,8 +19,10 @@ type JobFixture = {
 
 type ErrorCodeFixture = Record<string, { meaning: string; severity: string; remediation: string }>;
 
-// Required rather than read from disk so tsc bundles them into dist/ and they
-// resolve identically inside the container.
+/**
+ * Required rather than read from disk so tsc bundles the fixtures into dist/ and
+ * they resolve identically inside the container.
+ */
 const jobsFixture = require('../data/jobs.json') as JobFixture[];
 const errorCodesFixture = require('../data/errorCodes.json') as ErrorCodeFixture;
 

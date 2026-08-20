@@ -79,7 +79,6 @@ export async function insertTransaction(tx: NewTransaction, trx: Knex = db): Pro
 			hallucinationPenalty: tx.hallucinationPenalty,
 			exploring: tx.exploring,
 			degraded: tx.degraded,
-			// jsonb: knex serialises objects for us, and Postgres validates them.
 			rationale: JSON.stringify(tx.rationale),
 			createdAt
 		});

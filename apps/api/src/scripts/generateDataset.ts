@@ -76,7 +76,6 @@ const WRAPPERS: Record<TriageClass, Array<(q: string) => string>> = {
 };
 
 const TEMPLATES: Template[] = [
-  // ---- simple_lookup: the answer is a field ---------------------------------
   { label: 'simple_lookup', uses: ['code'], render: (s) => `what does error code ${s.code} mean` },
   { label: 'simple_lookup', uses: ['code'], render: (s) => `define ${s.code}` },
   { label: 'simple_lookup', uses: ['code'], render: (s) => `${s.code}` },
@@ -93,7 +92,6 @@ const TEMPLATES: Template[] = [
   { label: 'simple_lookup', uses: [], render: () => `heartbeat interval` },
   { label: 'simple_lookup', uses: [], render: () => `max retry attempts` },
 
-  // ---- complex_diagnostic: the answer is explained across prose -------------
   { label: 'complex_diagnostic', uses: [], render: () => `why is my render slower than usual` },
   { label: 'complex_diagnostic', uses: [], render: () => `how do I safely retry a stuck job` },
   {
@@ -147,7 +145,6 @@ const TEMPLATES: Template[] = [
     render: () => `what happens to partial output when a render fails midway`,
   },
 
-  // ---- urgent_incident: active incident language ---------------------------
   {
     label: 'urgent_incident',
     uses: [],
@@ -233,32 +230,30 @@ export function generateDataset(): { rows: number; path: string; perClass: Recor
 
   rows.push(['query', 'label', ...FEATURE_NAMES].join(','));
 
-  const REPEATS = 9; // 35 templates × 9 wrappers ≈ 315 labelled rows
-  const seen = new Set<string>();
+  const WRAPPER_ROTATIONS_PER_TEMPLATE = 9;
+  const alreadyEmittedRowKeys = new Set<string>();
 
-  for (let r = 0; r < REPEATS; r += 1) {
-    for (const t of TEMPLATES) {
+  for (let rotation = 0; rotation < WRAPPER_ROTATIONS_PER_TEMPLATE; rotation += 1) {
+    for (const template of TEMPLATES) {
       const slots: Slots = {
         job: JOB_IDS[Math.floor(rand() * JOB_IDS.length)] ?? '482',
         code: ERROR_CODES[Math.floor(rand() * ERROR_CODES.length)] ?? 'RENDER_TIMEOUT',
         worker: WORKERS[Math.floor(rand() * WORKERS.length)] ?? 'worker-07',
       };
-      const wrappers = WRAPPERS[t.label];
-      const wrap = wrappers[r % wrappers.length] ?? ((q: string) => q);
-      const query = wrap(t.render(slots));
+      const wrappers = WRAPPERS[template.label];
+      const wrapQuery = wrappers[rotation % wrappers.length] ?? ((q: string) => q);
+      const query = wrapQuery(template.render(slots));
 
-      const key = `${query}::${t.label}`;
-      // Identical rows carry no information and would inflate the row count
-      // while narrowing the actual vocabulary the model sees.
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const key = `${query}::${template.label}`;
+      if (alreadyEmittedRowKeys.has(key)) continue;
+      alreadyEmittedRowKeys.add(key);
 
       const features = classifierService.extractFeatures(query, {
         anchors: anchorsFor(query),
         incidentMatchCount: incidentMatchCount(query),
       });
-      rows.push([csvEscape(query), t.label, ...features].join(','));
-      perClass[t.label] = (perClass[t.label] ?? 0) + 1;
+      rows.push([csvEscape(query), template.label, ...features].join(','));
+      perClass[template.label] = (perClass[template.label] ?? 0) + 1;
     }
   }
 

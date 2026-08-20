@@ -69,15 +69,17 @@ export const TOOLS: Record<ToolName, Tool> = {
 		}
 	},
 
+	/**
+	 * Non-destructive by design. In a real deployment this is the insertion point
+	 * for the human-confirmation step: the agent proposes, the operator commits.
+	 * Nothing here reaches a control plane.
+	 */
 	restart_render: {
 		name: 'restart_render',
 		description: 'Request a restart of a job. MOCK — records intent, mutates nothing.',
 		mutating: true,
 		async run(arg, ctx) {
 			const jobId = arg.replace(/[^0-9]/g, '');
-			// Non-destructive by design. In a real deployment this is the insertion
-			// point for the human-confirmation step: the agent proposes, the operator
-			// commits. Nothing here reaches a control plane.
 			const text = jobId
 				? `Simulated restart request acknowledged for job ${jobId}. No real render was restarted; this is a mock control-plane call recorded for audit.`
 				: `Restart request rejected: no valid job id supplied (received "${arg}").`;
