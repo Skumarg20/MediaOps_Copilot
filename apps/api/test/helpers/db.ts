@@ -55,6 +55,14 @@ export async function isPostgresAvailable(): Promise<boolean> {
 		await probe.destroy();
 	}
 
+	// Skipping is right locally and wrong in CI: a green run that silently tested
+	// none of the database-backed behaviour is worse than a red one. CI sets this
+	// flag, so a missing service fails loudly at the first suite instead of
+	// hiding in a skip count nobody reads.
+	if (!cached.available && process.env.REQUIRE_POSTGRES === 'true') {
+		throw new Error(`REQUIRE_POSTGRES is set but ${skipReason()}`);
+	}
+
 	return cached.available;
 }
 

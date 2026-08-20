@@ -66,6 +66,9 @@ jobs:
       DB_DATABASE: mediaops_test
       TEST_DB_DATABASE: mediaops_test
       DB_SSL: 'false'
+      # A green run that skipped every database-backed suite is worse than a red
+      # one. This makes an unreachable Postgres fail loudly instead of silently.
+      REQUIRE_POSTGRES: 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -85,18 +88,6 @@ jobs:
       # dependency-down cases are tested rather than skipped.
       - name: api suite (unit + integration)
         run: npm run test --workspace=apps/api
-
-      - name: fail if the database-backed suites silently skipped
-        run: |
-          # These suites skip when Postgres is unreachable, which is right
-          # locally and wrong in CI — a green run that tested nothing is worse
-          # than a red one.
-          output=$(npm run --silent test --workspace=apps/api 2>&1)
-          echo "$output"
-          if echo "$output" | grep -qi 'Postgres is not reachable'; then
-            echo "::error::Database-backed suites skipped in CI — the postgres service is not reachable."
-            exit 1
-          fi
 
       - name: console suite
         run: npm run test --workspace=apps/web

@@ -57,6 +57,12 @@ function hashToken(token: string): number {
   return Math.abs(h) % LEXICAL_BUCKETS;
 }
 
+/**
+ * A hand-authored concept space. Real embeddings learn these relationships;
+ * here they are declared, which is enough for a deterministic similarity that
+ * still behaves semantically — "slower" and "elevated duration" land on the same
+ * axis despite sharing no characters.
+ */
 export function conceptEmbed(text: string): number[] {
   const vec = new Array(DIMS).fill(0);
   const tokens = text
@@ -103,6 +109,20 @@ function parseEvidenceBlocks(prompt: string): Array<{ id: string; text: string }
   return blocks;
 }
 
+/**
+ * Deterministic test double for the model runtime.
+ *
+ * Fakes, not mocks: the generator really parses the EVIDENCE block and really
+ * emits the ReAct format the loop parses, and the embedder really produces
+ * comparable vectors. That makes agent and retrieval tests fast, non-flaky, and
+ * runnable in CI with no model runtime present at all — without the tests
+ * asserting against a stub that agrees with whatever the code happens to do.
+ *
+ * Its limits are real and worth stating: this embedder ranked the
+ * performance-degradation runbook correctly for a query that nomic-embed-text
+ * did not, which is exactly the class of bug a fake cannot catch. It is why the
+ * canonical routing examples are also checked against the live stack.
+ */
 export class FakeLlmAdapter implements LlmAdapter {
   readonly calls: GenerateRequest[] = [];
 
