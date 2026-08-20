@@ -1,5 +1,6 @@
 import pino from 'pino';
 import { config } from '@/config.js';
+import { createOtelLogStream, otelTraceContextMixin } from '@/otel/logBridge.js';
 
 /**
  * Event names are a closed vocabulary so dashboards and alerts can be built on
@@ -26,16 +27,35 @@ export type LogEvent =
   | 'dep.circuit_open'
   | 'dep.circuit_closed'
   | 'boot.indexed'
-  | 'boot.seeded';
+  | 'boot.seeded'
+  | 'boot.listening'
+  | 'boot.shutdown'
+  | 'boot.failed';
 
-export const logger = pino({
-  level: config.logLevel,
-  base: { service: 'mediaops-copilot-api', version: config.version },
-  timestamp: () => `,"ts":"${new Date().toISOString()}"`,
-  formatters: {
-    level: (label) => ({ level: label }),
+/**
+ * Fans out to stdout and to the OpenTelemetry Logs API when telemetry is on, and
+ * is a plain stdout logger otherwise. Both streams are set to `trace` so the
+ * logger's own level stays the single place log volume is decided.
+ */
+const destination = config.otel.enabled
+  ? pino.multistream([
+      { level: 'trace', stream: process.stdout },
+      { level: 'trace', stream: createOtelLogStream() },
+    ])
+  : process.stdout;
+
+export const logger = pino(
+  {
+    level: config.logLevel,
+    base: { service: 'mediaops-copilot-api', version: config.version },
+    timestamp: () => `,"ts":"${new Date().toISOString()}"`,
+    formatters: {
+      level: (label) => ({ level: label }),
+    },
+    mixin: otelTraceContextMixin,
   },
-});
+  destination,
+);
 
 export type Logger = pino.Logger;
 

@@ -1,3 +1,4 @@
+import '@/otel/bootstrap.js';
 import { serve } from '@hono/node-server';
 import { trpcServer } from '@hono/trpc-server';
 import { Hono } from 'hono';
@@ -11,6 +12,7 @@ import { healthRouter, healthRoutes, metricsRoutes } from '@/modules/health/inde
 import { queryRouter, queryRoutes } from '@/modules/query/index.js';
 import { rlRouter, rlRoutes } from '@/modules/rl/index.js';
 import { transactionRouter, transactionRoutes } from '@/modules/transaction/index.js';
+import { otelMiddleware, shutdownTelemetry } from '@/otel/index.js';
 import { router } from '@/trpc.js';
 import { logEvent, logger, requestsTotal, statusClass } from '@/utils/index.js';
 
@@ -24,18 +26,31 @@ export const appRouter = router({
 
 export type AppRouter = typeof appRouter;
 
+/**
+ * How long a shutdown waits for in-flight connections before exiting hard, kept
+ * under a typical orchestrator grace period so a hung connection cannot hold the
+ * container open past it.
+ */
+const FORCED_EXIT_AFTER_GRACE_MS = 5_000;
+
+/**
+ * Builds the Hono app.
+ *
+ * CORS is wide open because this is a single-operator console and auth is out of
+ * scope for this build. Authentication belongs here, in front of all routes,
+ * with /health and /metrics moved to a separate internal listener.
+ */
 export function createApp(): Hono {
 	const app = new Hono();
 
-	// Single-operator console; auth is out of scope for this build. The natural
-	// insertion point is here, in front of all routes, with /health and /metrics
-	// moved to a separate internal listener.
 	app.use(
 		cors({
 			origin: '*',
 			allowMethods: ['GET', 'POST', 'OPTIONS']
 		})
 	);
+
+	app.use('*', otelMiddleware());
 
 	app.use('*', async (c, next) => {
 		const started = Date.now();
@@ -96,30 +111,30 @@ async function main(): Promise<void> {
 
 	const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 		logger.info(
-			{ event: 'boot.seeded', port: info.port, version: config.version, env: config.env },
+			{ event: 'boot.listening', port: info.port, version: config.version, env: config.env },
 			'mediaops-copilot api listening'
 		);
 	});
 
 	const shutdown = (signal: string) => {
-		logger.info({ event: 'boot.seeded', signal }, 'shutting down');
+		logger.info({ event: 'boot.shutdown', signal }, 'shutting down');
 		server.close(() => {
-			void closeDb().finally(() => process.exit(0));
+			void shutdownTelemetry()
+				.then(() => closeDb())
+				.finally(() => process.exit(0));
 		});
-		// Don't let a hung connection hold the container open past the
-		// orchestrator's own grace period.
-		setTimeout(() => process.exit(1), 5_000).unref();
+		setTimeout(() => process.exit(1), FORCED_EXIT_AFTER_GRACE_MS).unref();
 	};
 
 	process.on('SIGTERM', () => shutdown('SIGTERM'));
 	process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-// Only boot when run directly, so tests can import `createApp` without starting
-// a listener or touching the network.
-if (process.env.VITEST !== 'true') {
+const runningUnderVitest = process.env.VITEST === 'true';
+
+if (!runningUnderVitest) {
 	main().catch((error) => {
-		logger.error({ event: 'boot.seeded', error }, 'failed to start');
+		logger.error({ event: 'boot.failed', error }, 'failed to start');
 		process.exit(1);
 	});
 }

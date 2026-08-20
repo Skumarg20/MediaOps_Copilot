@@ -8,6 +8,7 @@ import { platformService } from '@/modules/platform/index.js';
 import { rlService } from '@/modules/rl/index.js';
 import { routingService, type PinDecision } from '@/modules/routing/index.js';
 import { insertTransaction } from '@/modules/transaction/index.js';
+import { annotateActiveSpan, withSpan } from '@/otel/index.js';
 import { childLogger, logEvent, requestDuration, retrievalHits } from '@/utils/index.js';
 import type { Evidence, GroundingVerdict, ModelArm, QueryContext, QueryResponse, Retriever } from '@/types.js';
 
@@ -24,6 +25,14 @@ export class NoPathAvailableError extends Error {
  *
  * Every stage records its decision rather than only its outcome, which is what
  * the RL loop and the rationale panel are both built from.
+ *
+ * Two behaviours are load-bearing and easy to mistake for accidents. An empty
+ * result from the chosen path retries the deterministic one, which moves *down*
+ * the degradation ladder toward the more verifiable answer, never up. And when
+ * nothing passes the retrieval floor no model is invoked at all — the cheapest
+ * hallucination defence is not generating in the first place — while the
+ * resulting abstention stays a first-class outcome: 200, the same rating path,
+ * and the arm still pays its penalty.
  */
 export async function handleQuery({ query }: { query: string }): Promise<QueryResponse> {
 	const ctx = getContext();
@@ -31,10 +40,19 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	const log = childLogger(transactionId);
 	const started = Date.now();
 
-	// ---------------------------------------------------------------- 1. triage
-	const anchors = await routingService.extractAnchors({ query });
-	const incidentMatchCount = await platformService.countIncidentMatches({ query });
-	const triage = ctx.classifier.predict(query, { anchors, incidentMatchCount });
+	const { anchors, triage } = await withSpan('copilot.triage', { 'copilot.transaction_id': transactionId }, async () => {
+		const resolvedAnchors = await routingService.extractAnchors({ query });
+		const incidentMatchCount = await platformService.countIncidentMatches({ query });
+		const prediction = ctx.classifier.predict(query, { anchors: resolvedAnchors, incidentMatchCount });
+
+		annotateActiveSpan({
+			'copilot.triage_class': prediction.class,
+			'copilot.triage_confidence': prediction.confidence,
+			'copilot.incident_matches': incidentMatchCount
+		});
+
+		return { anchors: resolvedAnchors, triage: prediction };
+	});
 
 	logEvent(log, 'info', 'triage.classified', {
 		class: triage.class,
@@ -42,7 +60,6 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 		top_features: triage.topFeatures.map((feature) => feature.name)
 	});
 
-	// ----------------------------------------------------------------- 2. route
 	const vectorHealth = await ctx.vector.health();
 	const vectorAvailable = vectorHealth.status === 'up';
 
@@ -57,10 +74,8 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 		deterministic: pin.deterministic
 	});
 
-	// A model tag that is missing cannot be selected; the arm is masked out, not
-	// penalised — an unavailable arm is not a bad arm.
-	const tags = await ctx.llm.availableModels();
-	const healthyModels = config.models.filter((model: ModelArm) => tags.has(model));
+	const servableModelTags = await ctx.llm.availableModels();
+	const healthyModels = config.models.filter((model: ModelArm) => servableModelTags.has(model));
 	const availableModels = healthyModels.length > 0 ? healthyModels : [...config.models];
 
 	const allowed = rlService.maskActions({ pinnedPath: pin.path, availableModels });
@@ -87,22 +102,24 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	const path = decision.action.path;
 	const model = decision.action.model;
 
-	// -------------------------------------------------------------- 3. retrieve
 	const queryContext: QueryContext = { transactionId, triage, anchors };
 	const retriever: Retriever = path === 'vector' ? ctx.vector : ctx.vectorless;
 
 	const retrieveStart = Date.now();
-	let evidence: Evidence[] = await retriever.retrieve(query, queryContext);
+	let evidence: Evidence[] = await withSpan('copilot.retrieve', { 'copilot.retrieval_path': path }, () =>
+		retriever.retrieve(query, queryContext)
+	);
 	let usedPath = path;
 	let fellBack = false;
 
-	// Chosen path came back empty but the deterministic one might not have. Trying
-	// it costs a few milliseconds and moves *down* the degradation ladder, toward
-	// the more verifiable answer — never up.
 	if (evidence.length === 0 && path === 'vector') {
-		const fallback = await ctx.vectorless.retrieve(query, queryContext);
-		if (fallback.length > 0) {
-			evidence = fallback;
+		const deterministicFallbackEvidence = await withSpan(
+			'copilot.retrieve.fallback',
+			{ 'copilot.retrieval_path': 'vectorless' },
+			() => ctx.vectorless.retrieve(query, queryContext)
+		);
+		if (deterministicFallbackEvidence.length > 0) {
+			evidence = deterministicFallbackEvidence;
 			usedPath = 'vectorless';
 			fellBack = true;
 			logEvent(log, 'info', 'retrieval.completed', {
@@ -121,7 +138,6 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	});
 	if (evidence.length === 0) retrievalHits.observe({ path: usedPath }, 0);
 
-	// ---------------------------------------------------- 4. reason  5. verify
 	let answer: string;
 	let citedIds: string[];
 	let degraded = false;
@@ -129,8 +145,6 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	let verdict: GroundingVerdict;
 
 	if (evidence.length === 0) {
-		// Gate 1 tripped. No model is invoked at all — the cheapest possible
-		// hallucination defence is not generating in the first place.
 		answer = ABSTENTION_ANSWER;
 		citedIds = [];
 		verdict = {
@@ -144,12 +158,17 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 			reason: 'retrieval_floor'
 		});
 	} else {
-		const agent = await agentService.runReactLoop(query, evidence, {
-			llm: ctx.llm,
-			log,
-			transactionId,
-			model
-		});
+		const agent = await withSpan(
+			'copilot.reason',
+			{ 'copilot.model': model, 'copilot.evidence_count': evidence.length },
+			() =>
+				agentService.runReactLoop(query, evidence, {
+					llm: ctx.llm,
+					log,
+					transactionId,
+					model
+				})
+		);
 
 		evidence = agent.evidence;
 		degraded = agent.degraded;
@@ -166,8 +185,6 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 				citations: citedIds.length
 			});
 		} else {
-			// Abstention is a first-class outcome, not an error: it returns 200, flows
-			// through the same rating path, and still costs the arm its penalty.
 			answer = ABSTENTION_ANSWER;
 			citedIds = [];
 			logEvent(log, 'warn', 'grounding.failed', {
@@ -179,10 +196,19 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 		}
 	}
 
+	annotateActiveSpan({
+		'copilot.retrieval_path': usedPath,
+		'copilot.model': model,
+		'copilot.exploring': decision.exploring,
+		'copilot.grounded': verdict.grounded,
+		'copilot.overlap': verdict.overlap,
+		'copilot.confidence_band': verdict.band,
+		'copilot.degraded': degraded
+	});
+
 	const latencyMs = Date.now() - started;
 	const hallucinationPenalty = rlService.hallucinationPenaltyFor(verdict.grounded, verdict.invalidCitations.length);
 
-	// --------------------------------------------------------------- 6. explain
 	const citations = explainService.toCitations(evidence, citedIds);
 	const effectivePin: PinDecision = fellBack
 		? {
@@ -205,7 +231,6 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 		...(degradedReason ? { degradedReason } : {})
 	});
 
-	// ------------------------------------------- 7. learn (provisional phase)
 	const armAfterPull = await ctx.bandit.registerPull(triage.class, decision.action);
 	rlService.recordPullMetric(triage.class, rlService.actionKey(decision.action), decision.exploring);
 	rationale.model.arm_pulls = armAfterPull.pulls;

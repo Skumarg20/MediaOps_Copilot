@@ -110,6 +110,19 @@ export const config = {
 		mediumBand: num('GROUNDING_MEDIUM_BAND', 0.25)
 	},
 
+	/**
+	 * Off unless switched on. The Prometheus endpoint at /metrics is always
+	 * there; this is the export path to a collector, which only exists when one
+	 * is actually running.
+	 */
+	otel: {
+		enabled: bool('OTEL_ENABLED', false),
+		endpoint: str('OTEL_ENDPOINT', 'http://localhost:4318'),
+		serviceName: str('OTEL_SERVICE_NAME', 'mediaops-copilot-api'),
+		serviceVersion: str('APP_VERSION', '1.0.0'),
+		metricExportIntervalMs: num('OTEL_METRIC_EXPORT_INTERVAL_MS', 10_000)
+	},
+
 	logLevel: str('LOG_LEVEL', 'info')
 } as const;
 

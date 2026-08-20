@@ -1,13 +1,4 @@
-# MediaOps Copilot — the whole system, locally, with no accounts and no keys.
-#
-#   docker compose up --build
-#   docker compose exec ollama ollama pull llama3.2:3b
-#   docker compose exec ollama ollama pull qwen2.5:3b
-#   docker compose exec ollama ollama pull nomic-embed-text
-#
-# The API waits for Postgres (it cannot record or learn without it) but not for
-# Ollama, reporting `degraded` until the model runtime is warm. Start-up order is
-# a correctness dependency for the database and nothing else.
+
 
 services:
   postgres:
@@ -35,7 +26,6 @@ services:
     ports:
       - '11434:11434'
     volumes:
-      # Persisted so model pulls happen exactly once.
       - ollama-models:/root/.ollama
     healthcheck:
       test: ['CMD-SHELL', 'ollama list >/dev/null 2>&1 || exit 1']
@@ -55,30 +45,20 @@ services:
     environment:
       PROJECT_ENV: production
       NODE_ENV: production
-      PORT: '8080'
-      LOG_LEVEL: info
-      DB_CLIENT: pg
       DB_HOST: postgres
-      DB_PORT: '5432'
       DB_USER: copilot
       DB_PASSWORD: copilot
       DB_DATABASE: mediaops
-      DB_SSL: 'false'
       OLLAMA_BASE_URL: http://ollama:11434
-      # Hosted generation + local embeddings. Set OPENROUTER_API_KEY in a .env
-      # beside this file (compose reads it automatically) or export it in the
-      # shell. Without a key the API logs a warning and runs fully on Ollama.
       LLM_PROVIDER: ${LLM_PROVIDER:-hybrid}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL_LLAMA: ${OPENROUTER_MODEL_LLAMA:-meta-llama/llama-3.2-3b-instruct}
       OPENROUTER_MODEL_QWEN: ${OPENROUTER_MODEL_QWEN:-qwen/qwen-2.5-7b-instruct}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_ENDPOINT: http://otel-collector:4318
     depends_on:
-      # Postgres must be reachable: the entrypoint runs migrations before boot,
-      # and a service that cannot record a decision has nothing honest to serve.
       postgres:
         condition: service_healthy
-      # Only `started` for Ollama — waiting on a model runtime would turn a
-      # degraded dependency into a failed boot, the opposite of the contract.
       ollama:
         condition: service_started
     restart: unless-stopped
@@ -88,17 +68,32 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        # Baked into the client bundle, so it must be the URL the *browser*
-        # uses — not the compose-internal hostname.
         NEXT_PUBLIC_API_URL: http://localhost:8080
     container_name: mediaops-web
     ports:
-      # Host port is overridable: 3000 is a popular default and something else on
-      # the machine often already owns it. The container port stays 3000.
       - '${WEB_PORT:-3000}:3000'
     depends_on:
       api:
         condition: service_started
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: mediaops-otel-collector
+    profiles: ['telemetry']
+    command: ['--config=/etc/otel-collector.yaml']
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+      - '13133:13133'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:13133']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
 volumes:
