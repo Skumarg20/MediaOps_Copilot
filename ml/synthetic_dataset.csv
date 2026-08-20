@@ -1,0 +1,316 @@
+query,label,query_len_tokens,has_job_id,has_error_code,q_why,q_how,q_what,urgency_hits,incident_match_count
+what does error code FONT_MISSING mean,simple_lookup,6,0,1,0,0,1,0,1
+define RENDER_TIMEOUT,simple_lookup,2,0,1,0,0,0,0,2
+RENDER_TIMEOUT,simple_lookup,1,0,1,0,0,0,0,2
+meaning of UPLOAD_TIMEOUT,simple_lookup,3,0,1,0,0,0,0,1
+what is the severity of UPLOAD_TIMEOUT,simple_lookup,6,0,1,0,0,1,0,1
+status of job 483,simple_lookup,4,1,0,0,0,0,0,0
+what is job #488 doing,simple_lookup,5,1,0,0,0,1,0,0
+job 491 status,simple_lookup,3,1,0,0,0,0,0,0
+which worker ran job 485,simple_lookup,5,1,0,0,0,0,0,0
+how long did job 485 take,simple_lookup,6,1,0,0,1,0,0,0
+what is the queue depth limit,simple_lookup,6,0,0,0,0,1,0,0
+render timeout budget for 4k jobs,simple_lookup,6,0,0,0,0,0,0,0
+what are the priority tiers,simple_lookup,5,0,0,0,0,1,0,0
+heartbeat interval,simple_lookup,2,0,0,0,0,0,0,0
+max retry attempts,simple_lookup,3,0,0,0,0,0,0,0
+why is my render slower than usual,complex_diagnostic,7,0,0,1,0,0,0,0
+how do I safely retry a stuck job,complex_diagnostic,8,0,0,0,1,0,1,0
+why are renders taking longer after the deploy,complex_diagnostic,8,0,0,1,0,0,0,0
+why did job 488 fail and how should I handle it,complex_diagnostic,11,1,0,1,1,0,0,0
+why do we keep seeing RENDER_TIMEOUT and what should I do about it,complex_diagnostic,13,0,1,1,0,1,0,2
+how do I tell whether a slowdown is queue wait or render duration,complex_diagnostic,13,0,0,0,1,0,0,0
+should I drain worker-02 or retry the jobs on it,complex_diagnostic,10,0,0,0,0,0,0,0
+what is the difference between a stalled render and a timeout,complex_diagnostic,11,0,0,0,0,1,0,0
+how does the scheduler decide which worker gets a job,complex_diagnostic,10,0,0,0,1,0,0,0
+why would two workers process the same job,complex_diagnostic,8,0,0,1,0,0,0,0
+how do I know if a failure is transient or deterministic,complex_diagnostic,11,0,0,0,1,0,0,0
+what happens to partial output when a render fails midway,complex_diagnostic,10,0,0,0,0,1,0,0
+production down all jobs are stuck in rendering right now,urgent_incident,10,0,0,0,0,0,4,0
+p1 every job is failing customers are blocked,urgent_incident,8,0,0,0,0,0,4,0
+urgent the whole fleet is throwing RENDER_STALLED asap,urgent_incident,8,0,1,0,0,0,3,1
+sev1 outage nothing is rendering and the queue is backing up,urgent_incident,11,0,0,0,0,0,3,0
+critical worker-09 is stuck and all jobs on it are blocked,urgent_incident,11,0,0,0,0,0,4,0
+all jobs stuck queue depth climbing urgent need help now,urgent_incident,10,0,0,0,0,0,3,0
+p1 job 485 is stuck and customers are waiting right now,urgent_incident,11,1,0,0,0,0,4,0
+outage everything is deferred and nothing is being admitted,urgent_incident,9,0,0,0,0,0,3,0
+what does error code RENDER_TIMEOUT mean?,simple_lookup,6,0,1,0,0,1,0,2
+define FONT_MISSING?,simple_lookup,2,0,1,0,0,0,0,1
+FONT_MISSING?,simple_lookup,1,0,1,0,0,0,0,1
+meaning of RENDER_TIMEOUT?,simple_lookup,3,0,1,0,0,0,0,2
+what is the severity of STORAGE_BACKPRESSURE?,simple_lookup,6,0,1,0,0,1,0,0
+status of job 493?,simple_lookup,4,1,0,0,0,0,0,0
+what is job #491 doing?,simple_lookup,5,1,0,0,0,1,0,0
+job 488 status?,simple_lookup,3,1,0,0,0,0,0,0
+which worker ran job 482?,simple_lookup,5,1,0,0,0,0,0,0
+how long did job 489 take?,simple_lookup,6,1,0,0,1,0,0,0
+what is the queue depth limit?,simple_lookup,6,0,0,0,0,1,0,0
+render timeout budget for 4k jobs?,simple_lookup,6,0,0,0,0,0,0,0
+what are the priority tiers?,simple_lookup,5,0,0,0,0,1,0,0
+heartbeat interval?,simple_lookup,2,0,0,0,0,0,0,0
+max retry attempts?,simple_lookup,3,0,0,0,0,0,0,0
+why is my render slower than usual?,complex_diagnostic,7,0,0,1,0,0,0,0
+how do I safely retry a stuck job?,complex_diagnostic,8,0,0,0,1,0,1,0
+why are renders taking longer after the deploy?,complex_diagnostic,8,0,0,1,0,0,0,0
+why did job 486 fail and how should I handle it?,complex_diagnostic,11,1,0,1,1,0,0,0
+why do we keep seeing RENDER_TIMEOUT and what should I do about it?,complex_diagnostic,13,0,1,1,0,1,0,2
+how do I tell whether a slowdown is queue wait or render duration?,complex_diagnostic,13,0,0,0,1,0,0,0
+should I drain worker-07 or retry the jobs on it?,complex_diagnostic,10,0,0,0,0,0,0,0
+what is the difference between a stalled render and a timeout?,complex_diagnostic,11,0,0,0,0,1,0,0
+how does the scheduler decide which worker gets a job?,complex_diagnostic,10,0,0,0,1,0,0,0
+why would two workers process the same job?,complex_diagnostic,8,0,0,1,0,0,0,0
+how do I know if a failure is transient or deterministic?,complex_diagnostic,11,0,0,0,1,0,0,0
+what happens to partial output when a render fails midway?,complex_diagnostic,10,0,0,0,0,1,0,0
+production down all jobs are stuck in rendering right now!,urgent_incident,10,0,0,0,0,0,4,0
+p1 every job is failing customers are blocked!,urgent_incident,8,0,0,0,0,0,4,0
+urgent the whole fleet is throwing ASSET_UNSUPPORTED_CODEC asap!,urgent_incident,8,0,1,0,0,0,3,1
+sev1 outage nothing is rendering and the queue is backing up!,urgent_incident,11,0,0,0,0,0,3,0
+critical worker-02 is stuck and all jobs on it are blocked!,urgent_incident,11,0,0,0,0,0,4,0
+all jobs stuck queue depth climbing urgent need help now!,urgent_incident,10,0,0,0,0,0,3,0
+p1 job 489 is stuck and customers are waiting right now!,urgent_incident,11,1,0,0,0,0,4,0
+outage everything is deferred and nothing is being admitted!,urgent_incident,9,0,0,0,0,0,3,0
+quick question - what does error code RENDER_TIMEOUT mean,simple_lookup,9,0,1,0,0,1,0,2
+quick question - define FONT_MISSING,simple_lookup,5,0,1,0,0,0,0,1
+quick question - STORAGE_BACKPRESSURE,simple_lookup,4,0,1,0,0,0,0,0
+quick question - meaning of UPLOAD_TIMEOUT,simple_lookup,6,0,1,0,0,0,0,1
+quick question - what is the severity of RENDER_TIMEOUT,simple_lookup,9,0,1,0,0,1,0,2
+quick question - status of job 485,simple_lookup,7,1,0,0,0,0,0,0
+quick question - what is job #493 doing,simple_lookup,8,1,0,0,0,1,0,0
+quick question - job 493 status,simple_lookup,6,1,0,0,0,0,0,0
+quick question - which worker ran job 484,simple_lookup,8,1,0,0,0,0,0,0
+quick question - how long did job 491 take,simple_lookup,9,1,0,0,1,0,0,0
+quick question - what is the queue depth limit,simple_lookup,9,0,0,0,0,1,0,0
+quick question - render timeout budget for 4k jobs,simple_lookup,9,0,0,0,0,0,0,0
+quick question - what are the priority tiers,simple_lookup,8,0,0,0,0,1,0,0
+quick question - heartbeat interval,simple_lookup,5,0,0,0,0,0,0,0
+quick question - max retry attempts,simple_lookup,6,0,0,0,0,0,0,0
+why is my render slower than usual - trying to work out the root cause,complex_diagnostic,15,0,0,1,0,0,0,0
+how do I safely retry a stuck job - trying to work out the root cause,complex_diagnostic,16,0,0,0,1,0,1,0
+why are renders taking longer after the deploy - trying to work out the root cause,complex_diagnostic,16,0,0,1,0,0,0,0
+why did job 493 fail and how should I handle it - trying to work out the root cause,complex_diagnostic,19,1,0,1,1,0,0,0
+why do we keep seeing UPLOAD_TIMEOUT and what should I do about it - trying to work out the root cause,complex_diagnostic,21,0,1,1,0,1,0,1
+how do I tell whether a slowdown is queue wait or render duration - trying to work out the root cause,complex_diagnostic,21,0,0,0,1,0,0,0
+should I drain worker-02 or retry the jobs on it - trying to work out the root cause,complex_diagnostic,18,0,0,0,0,0,0,0
+what is the difference between a stalled render and a timeout - trying to work out the root cause,complex_diagnostic,19,0,0,0,0,1,0,0
+how does the scheduler decide which worker gets a job - trying to work out the root cause,complex_diagnostic,18,0,0,0,1,0,0,0
+why would two workers process the same job - trying to work out the root cause,complex_diagnostic,16,0,0,1,0,0,0,0
+how do I know if a failure is transient or deterministic - trying to work out the root cause,complex_diagnostic,19,0,0,0,1,0,0,0
+what happens to partial output when a render fails midway - trying to work out the root cause,complex_diagnostic,18,0,0,0,0,1,0,0
+production down all jobs are stuck in rendering right now - escalating now,urgent_incident,13,0,0,0,0,0,4,0
+p1 every job is failing customers are blocked - escalating now,urgent_incident,11,0,0,0,0,0,4,0
+urgent the whole fleet is throwing STORAGE_BACKPRESSURE asap - escalating now,urgent_incident,11,0,1,0,0,0,3,0
+sev1 outage nothing is rendering and the queue is backing up - escalating now,urgent_incident,14,0,0,0,0,0,3,0
+critical worker-03 is stuck and all jobs on it are blocked - escalating now,urgent_incident,14,0,0,0,0,0,4,0
+all jobs stuck queue depth climbing urgent need help now - escalating now,urgent_incident,13,0,0,0,0,0,3,0
+p1 job 493 is stuck and customers are waiting right now - escalating now,urgent_incident,14,1,0,0,0,0,4,0
+outage everything is deferred and nothing is being admitted - escalating now,urgent_incident,12,0,0,0,0,0,3,0
+can you tell me what does error code RENDER_STALLED mean,simple_lookup,10,0,1,0,0,1,0,1
+can you tell me define STORAGE_BACKPRESSURE,simple_lookup,6,0,1,0,0,0,0,0
+can you tell me RENDER_TIMEOUT,simple_lookup,5,0,1,0,0,0,0,2
+can you tell me meaning of RENDER_TIMEOUT,simple_lookup,7,0,1,0,0,0,0,2
+can you tell me what is the severity of UPLOAD_TIMEOUT,simple_lookup,10,0,1,0,0,1,0,1
+can you tell me status of job 488,simple_lookup,8,1,0,0,0,0,0,0
+can you tell me what is job #482 doing,simple_lookup,9,1,0,0,0,1,0,0
+can you tell me job 491 status,simple_lookup,7,1,0,0,0,0,0,0
+can you tell me which worker ran job 486,simple_lookup,9,1,0,0,0,0,0,0
+can you tell me how long did job 487 take,simple_lookup,10,1,0,0,1,0,0,0
+can you tell me what is the queue depth limit,simple_lookup,10,0,0,0,0,1,0,0
+can you tell me render timeout budget for 4k jobs,simple_lookup,10,0,0,0,0,0,0,0
+can you tell me what are the priority tiers,simple_lookup,9,0,0,0,0,1,0,0
+can you tell me heartbeat interval,simple_lookup,6,0,0,0,0,0,0,0
+can you tell me max retry attempts,simple_lookup,7,0,0,0,0,0,0,0
+a submitter is asking why is my render slower than usual,complex_diagnostic,11,0,0,1,0,0,0,0
+a submitter is asking how do I safely retry a stuck job,complex_diagnostic,12,0,0,0,1,0,1,0
+a submitter is asking why are renders taking longer after the deploy,complex_diagnostic,12,0,0,1,0,0,0,0
+a submitter is asking why did job 482 fail and how should I handle it,complex_diagnostic,15,1,0,1,1,0,0,0
+a submitter is asking why do we keep seeing RENDER_STALLED and what should I do about it,complex_diagnostic,17,0,1,1,0,1,0,1
+a submitter is asking how do I tell whether a slowdown is queue wait or render duration,complex_diagnostic,17,0,0,0,1,0,0,0
+a submitter is asking should I drain worker-11 or retry the jobs on it,complex_diagnostic,14,0,0,0,0,0,0,0
+a submitter is asking what is the difference between a stalled render and a timeout,complex_diagnostic,15,0,0,0,0,1,0,0
+a submitter is asking how does the scheduler decide which worker gets a job,complex_diagnostic,14,0,0,0,1,0,0,0
+a submitter is asking why would two workers process the same job,complex_diagnostic,12,0,0,1,0,0,0,0
+a submitter is asking how do I know if a failure is transient or deterministic,complex_diagnostic,15,0,0,0,1,0,0,0
+a submitter is asking what happens to partial output when a render fails midway,complex_diagnostic,14,0,0,0,0,1,0,0
+"production down all jobs are stuck in rendering right now, need an answer immediately",urgent_incident,14,0,0,0,0,0,4,0
+"p1 every job is failing customers are blocked, need an answer immediately",urgent_incident,12,0,0,0,0,0,4,0
+"urgent the whole fleet is throwing ASSET_UNSUPPORTED_CODEC asap, need an answer immediately",urgent_incident,12,0,1,0,0,0,3,1
+"sev1 outage nothing is rendering and the queue is backing up, need an answer immediately",urgent_incident,15,0,0,0,0,0,3,0
+"critical worker-02 is stuck and all jobs on it are blocked, need an answer immediately",urgent_incident,15,0,0,0,0,0,4,0
+"all jobs stuck queue depth climbing urgent need help now, need an answer immediately",urgent_incident,14,0,0,0,0,0,3,0
+"p1 job 482 is stuck and customers are waiting right now, need an answer immediately",urgent_incident,15,1,0,0,0,0,4,0
+"outage everything is deferred and nothing is being admitted, need an answer immediately",urgent_incident,13,0,0,0,0,0,3,0
+what does error code RENDER_STALLED mean for the 4k class,simple_lookup,10,0,1,0,0,1,0,1
+define RENDER_TIMEOUT for the 4k class,simple_lookup,6,0,1,0,0,0,0,2
+QUEUE_SHED_DEFERRED for the 4k class,simple_lookup,5,0,1,0,0,0,0,1
+meaning of WORKER_EVICTED for the 4k class,simple_lookup,7,0,1,0,0,0,0,1
+what is the severity of QUEUE_SHED_DEFERRED for the 4k class,simple_lookup,10,0,1,0,0,1,0,1
+status of job 490 for the 4k class,simple_lookup,8,1,0,0,0,0,0,0
+what is job #490 doing for the 4k class,simple_lookup,9,1,0,0,0,1,0,0
+job 483 status for the 4k class,simple_lookup,7,1,0,0,0,0,0,0
+which worker ran job 492 for the 4k class,simple_lookup,9,1,0,0,0,0,0,0
+how long did job 492 take for the 4k class,simple_lookup,10,1,0,0,1,0,0,0
+what is the queue depth limit for the 4k class,simple_lookup,10,0,0,0,0,1,0,0
+render timeout budget for 4k jobs for the 4k class,simple_lookup,10,0,0,0,0,0,0,0
+what are the priority tiers for the 4k class,simple_lookup,9,0,0,0,0,1,0,0
+heartbeat interval for the 4k class,simple_lookup,6,0,0,0,0,0,0,0
+max retry attempts for the 4k class,simple_lookup,7,0,0,0,0,0,0,0
+why is my render slower than usual and what should I check first,complex_diagnostic,13,0,0,1,0,1,0,0
+how do I safely retry a stuck job and what should I check first,complex_diagnostic,14,0,0,0,1,1,1,0
+why are renders taking longer after the deploy and what should I check first,complex_diagnostic,14,0,0,1,0,1,0,0
+why did job 485 fail and how should I handle it and what should I check first,complex_diagnostic,17,1,0,1,1,1,0,0
+why do we keep seeing FONT_MISSING and what should I do about it and what should I check first,complex_diagnostic,19,0,1,1,0,1,0,1
+how do I tell whether a slowdown is queue wait or render duration and what should I check first,complex_diagnostic,19,0,0,0,1,1,0,0
+should I drain worker-03 or retry the jobs on it and what should I check first,complex_diagnostic,16,0,0,0,0,1,0,0
+what is the difference between a stalled render and a timeout and what should I check first,complex_diagnostic,17,0,0,0,0,1,0,0
+how does the scheduler decide which worker gets a job and what should I check first,complex_diagnostic,16,0,0,0,1,1,0,0
+why would two workers process the same job and what should I check first,complex_diagnostic,14,0,0,1,0,1,0,0
+how do I know if a failure is transient or deterministic and what should I check first,complex_diagnostic,17,0,0,0,1,1,0,0
+what happens to partial output when a render fails midway and what should I check first,complex_diagnostic,16,0,0,0,0,1,0,0
+on call here - production down all jobs are stuck in rendering right now,urgent_incident,14,0,0,0,0,0,4,0
+on call here - p1 every job is failing customers are blocked,urgent_incident,12,0,0,0,0,0,4,0
+on call here - urgent the whole fleet is throwing QUEUE_SHED_DEFERRED asap,urgent_incident,12,0,1,0,0,0,3,1
+on call here - sev1 outage nothing is rendering and the queue is backing up,urgent_incident,15,0,0,0,0,0,3,0
+on call here - critical worker-03 is stuck and all jobs on it are blocked,urgent_incident,15,0,0,0,0,0,4,0
+on call here - all jobs stuck queue depth climbing urgent need help now,urgent_incident,14,0,0,0,0,0,3,0
+on call here - p1 job 483 is stuck and customers are waiting right now,urgent_incident,15,1,0,0,0,0,4,0
+on call here - outage everything is deferred and nothing is being admitted,urgent_incident,13,0,0,0,0,0,3,0
+looking up what does error code UPLOAD_TIMEOUT mean,simple_lookup,8,0,1,0,0,1,0,1
+looking up define FONT_MISSING,simple_lookup,4,0,1,0,0,0,0,1
+looking up STORAGE_BACKPRESSURE,simple_lookup,3,0,1,0,0,0,0,0
+looking up meaning of WORKER_EVICTED,simple_lookup,5,0,1,0,0,0,0,1
+looking up what is the severity of RENDER_STALLED,simple_lookup,8,0,1,0,0,1,0,1
+looking up status of job 491,simple_lookup,6,1,0,0,0,0,0,0
+looking up what is job #490 doing,simple_lookup,7,1,0,0,0,1,0,0
+looking up job 490 status,simple_lookup,5,1,0,0,0,0,0,0
+looking up which worker ran job 493,simple_lookup,7,1,0,0,0,0,0,0
+looking up how long did job 492 take,simple_lookup,8,1,0,0,1,0,0,0
+looking up what is the queue depth limit,simple_lookup,8,0,0,0,0,1,0,0
+looking up render timeout budget for 4k jobs,simple_lookup,8,0,0,0,0,0,0,0
+looking up what are the priority tiers,simple_lookup,7,0,0,0,0,1,0,0
+looking up heartbeat interval,simple_lookup,4,0,0,0,0,0,0,0
+looking up max retry attempts,simple_lookup,5,0,0,0,0,0,0,0
+I've been asked why is my render slower than usual,complex_diagnostic,11,0,0,1,0,0,0,0
+I've been asked how do I safely retry a stuck job,complex_diagnostic,12,0,0,0,1,0,1,0
+I've been asked why are renders taking longer after the deploy,complex_diagnostic,12,0,0,1,0,0,0,0
+I've been asked why did job 493 fail and how should I handle it,complex_diagnostic,15,1,0,1,1,0,0,0
+I've been asked why do we keep seeing UPLOAD_TIMEOUT and what should I do about it,complex_diagnostic,17,0,1,1,0,1,0,1
+I've been asked how do I tell whether a slowdown is queue wait or render duration,complex_diagnostic,17,0,0,0,1,0,0,0
+I've been asked should I drain worker-03 or retry the jobs on it,complex_diagnostic,14,0,0,0,0,0,0,0
+I've been asked what is the difference between a stalled render and a timeout,complex_diagnostic,15,0,0,0,0,1,0,0
+I've been asked how does the scheduler decide which worker gets a job,complex_diagnostic,14,0,0,0,1,0,0,0
+I've been asked why would two workers process the same job,complex_diagnostic,12,0,0,1,0,0,0,0
+I've been asked how do I know if a failure is transient or deterministic,complex_diagnostic,15,0,0,0,1,0,0,0
+I've been asked what happens to partial output when a render fails midway,complex_diagnostic,14,0,0,0,0,1,0,0
+production down all jobs are stuck in rendering right now and the pager is going off,urgent_incident,16,0,0,0,0,0,4,0
+p1 every job is failing customers are blocked and the pager is going off,urgent_incident,14,0,0,0,0,0,4,0
+urgent the whole fleet is throwing RENDER_TIMEOUT asap and the pager is going off,urgent_incident,14,0,1,0,0,0,3,2
+sev1 outage nothing is rendering and the queue is backing up and the pager is going off,urgent_incident,17,0,0,0,0,0,3,0
+critical worker-03 is stuck and all jobs on it are blocked and the pager is going off,urgent_incident,17,0,0,0,0,0,4,0
+all jobs stuck queue depth climbing urgent need help now and the pager is going off,urgent_incident,16,0,0,0,0,0,3,0
+p1 job 492 is stuck and customers are waiting right now and the pager is going off,urgent_incident,17,1,0,0,0,0,4,0
+outage everything is deferred and nothing is being admitted and the pager is going off,urgent_incident,15,0,0,0,0,0,3,0
+what does error code QUEUE_SHED_DEFERRED mean please,simple_lookup,7,0,1,0,0,1,0,1
+define RENDER_TIMEOUT please,simple_lookup,3,0,1,0,0,0,0,2
+WORKER_EVICTED please,simple_lookup,2,0,1,0,0,0,0,1
+meaning of FONT_MISSING please,simple_lookup,4,0,1,0,0,0,0,1
+what is the severity of FONT_MISSING please,simple_lookup,7,0,1,0,0,1,0,1
+status of job 484 please,simple_lookup,5,1,0,0,0,0,0,0
+what is job #493 doing please,simple_lookup,6,1,0,0,0,1,0,0
+job 489 status please,simple_lookup,4,1,0,0,0,0,0,0
+which worker ran job 484 please,simple_lookup,6,1,0,0,0,0,0,0
+how long did job 492 take please,simple_lookup,7,1,0,0,1,0,0,0
+what is the queue depth limit please,simple_lookup,7,0,0,0,0,1,0,0
+render timeout budget for 4k jobs please,simple_lookup,7,0,0,0,0,0,0,0
+what are the priority tiers please,simple_lookup,6,0,0,0,0,1,0,0
+heartbeat interval please,simple_lookup,3,0,0,0,0,0,0,0
+max retry attempts please,simple_lookup,4,0,0,0,0,0,0,0
+why is my render slower than usual - the dashboard is not conclusive,complex_diagnostic,13,0,0,1,0,0,0,0
+how do I safely retry a stuck job - the dashboard is not conclusive,complex_diagnostic,14,0,0,0,1,0,1,0
+why are renders taking longer after the deploy - the dashboard is not conclusive,complex_diagnostic,14,0,0,1,0,0,0,0
+why did job 487 fail and how should I handle it - the dashboard is not conclusive,complex_diagnostic,17,1,0,1,1,0,0,0
+why do we keep seeing RENDER_TIMEOUT and what should I do about it - the dashboard is not conclusive,complex_diagnostic,19,0,1,1,0,1,0,2
+how do I tell whether a slowdown is queue wait or render duration - the dashboard is not conclusive,complex_diagnostic,19,0,0,0,1,0,0,0
+should I drain worker-07 or retry the jobs on it - the dashboard is not conclusive,complex_diagnostic,16,0,0,0,0,0,0,0
+what is the difference between a stalled render and a timeout - the dashboard is not conclusive,complex_diagnostic,17,0,0,0,0,1,0,0
+how does the scheduler decide which worker gets a job - the dashboard is not conclusive,complex_diagnostic,16,0,0,0,1,0,0,0
+why would two workers process the same job - the dashboard is not conclusive,complex_diagnostic,14,0,0,1,0,0,0,0
+how do I know if a failure is transient or deterministic - the dashboard is not conclusive,complex_diagnostic,17,0,0,0,1,0,0,0
+what happens to partial output when a render fails midway - the dashboard is not conclusive,complex_diagnostic,16,0,0,0,0,1,0,0
+"production down all jobs are stuck in rendering right now, this is customer facing",urgent_incident,14,0,0,0,0,0,4,0
+"p1 every job is failing customers are blocked, this is customer facing",urgent_incident,12,0,0,0,0,0,4,0
+"urgent the whole fleet is throwing ASSET_UNSUPPORTED_CODEC asap, this is customer facing",urgent_incident,12,0,1,0,0,0,3,1
+"sev1 outage nothing is rendering and the queue is backing up, this is customer facing",urgent_incident,15,0,0,0,0,0,3,0
+"critical worker-03 is stuck and all jobs on it are blocked, this is customer facing",urgent_incident,15,0,0,0,0,0,4,0
+"all jobs stuck queue depth climbing urgent need help now, this is customer facing",urgent_incident,14,0,0,0,0,0,3,0
+"p1 job 484 is stuck and customers are waiting right now, this is customer facing",urgent_incident,15,1,0,0,0,0,4,0
+"outage everything is deferred and nothing is being admitted, this is customer facing",urgent_incident,13,0,0,0,0,0,3,0
+remind me what does error code WORKER_EVICTED mean,simple_lookup,8,0,1,0,0,1,0,1
+remind me define WORKER_EVICTED,simple_lookup,4,0,1,0,0,0,0,1
+remind me FONT_MISSING,simple_lookup,3,0,1,0,0,0,0,1
+remind me meaning of STORAGE_BACKPRESSURE,simple_lookup,5,0,1,0,0,0,0,0
+remind me what is the severity of QUEUE_SHED_DEFERRED,simple_lookup,8,0,1,0,0,1,0,1
+remind me status of job 486,simple_lookup,6,1,0,0,0,0,0,0
+remind me what is job #488 doing,simple_lookup,7,1,0,0,0,1,0,0
+remind me job 488 status,simple_lookup,5,1,0,0,0,0,0,0
+remind me which worker ran job 483,simple_lookup,7,1,0,0,0,0,0,0
+remind me how long did job 489 take,simple_lookup,8,1,0,0,1,0,0,0
+remind me what is the queue depth limit,simple_lookup,8,0,0,0,0,1,0,0
+remind me render timeout budget for 4k jobs,simple_lookup,8,0,0,0,0,0,0,0
+remind me what are the priority tiers,simple_lookup,7,0,0,0,0,1,0,0
+remind me heartbeat interval,simple_lookup,4,0,0,0,0,0,0,0
+remind me max retry attempts,simple_lookup,5,0,0,0,0,0,0,0
+why is my render slower than usual on the 4k queue specifically,complex_diagnostic,12,0,0,1,0,0,0,0
+how do I safely retry a stuck job on the 4k queue specifically,complex_diagnostic,13,0,0,0,1,0,1,0
+why are renders taking longer after the deploy on the 4k queue specifically,complex_diagnostic,13,0,0,1,0,0,0,0
+why did job 492 fail and how should I handle it on the 4k queue specifically,complex_diagnostic,16,1,0,1,1,0,0,0
+why do we keep seeing FONT_MISSING and what should I do about it on the 4k queue specifically,complex_diagnostic,18,0,1,1,0,1,0,1
+how do I tell whether a slowdown is queue wait or render duration on the 4k queue specifically,complex_diagnostic,18,0,0,0,1,0,0,0
+should I drain worker-09 or retry the jobs on it on the 4k queue specifically,complex_diagnostic,15,0,0,0,0,0,0,0
+what is the difference between a stalled render and a timeout on the 4k queue specifically,complex_diagnostic,16,0,0,0,0,1,0,0
+how does the scheduler decide which worker gets a job on the 4k queue specifically,complex_diagnostic,15,0,0,0,1,0,0,0
+why would two workers process the same job on the 4k queue specifically,complex_diagnostic,13,0,0,1,0,0,0,0
+how do I know if a failure is transient or deterministic on the 4k queue specifically,complex_diagnostic,16,0,0,0,1,0,0,0
+what happens to partial output when a render fails midway on the 4k queue specifically,complex_diagnostic,15,0,0,0,0,1,0,0
+production down all jobs are stuck in rendering right now - who do I page,urgent_incident,15,0,0,0,0,0,4,0
+p1 every job is failing customers are blocked - who do I page,urgent_incident,13,0,0,0,0,0,4,0
+urgent the whole fleet is throwing QUEUE_SHED_DEFERRED asap - who do I page,urgent_incident,13,0,1,0,0,0,3,1
+sev1 outage nothing is rendering and the queue is backing up - who do I page,urgent_incident,16,0,0,0,0,0,3,0
+critical worker-07 is stuck and all jobs on it are blocked - who do I page,urgent_incident,16,0,0,0,0,0,4,0
+all jobs stuck queue depth climbing urgent need help now - who do I page,urgent_incident,15,0,0,0,0,0,3,0
+p1 job 488 is stuck and customers are waiting right now - who do I page,urgent_incident,16,1,0,0,0,0,4,0
+outage everything is deferred and nothing is being admitted - who do I page,urgent_incident,14,0,0,0,0,0,3,0
+what does error code STORAGE_BACKPRESSURE mean in the glossary,simple_lookup,9,0,1,0,0,1,0,0
+define QUEUE_SHED_DEFERRED in the glossary,simple_lookup,5,0,1,0,0,0,0,1
+STORAGE_BACKPRESSURE in the glossary,simple_lookup,4,0,1,0,0,0,0,0
+meaning of STORAGE_BACKPRESSURE in the glossary,simple_lookup,6,0,1,0,0,0,0,0
+what is the severity of ASSET_UNSUPPORTED_CODEC in the glossary,simple_lookup,9,0,1,0,0,1,0,1
+status of job 487 in the glossary,simple_lookup,7,1,0,0,0,0,0,0
+what is job #486 doing in the glossary,simple_lookup,8,1,0,0,0,1,0,0
+job 482 status in the glossary,simple_lookup,6,1,0,0,0,0,0,0
+which worker ran job 485 in the glossary,simple_lookup,8,1,0,0,0,0,0,0
+how long did job 484 take in the glossary,simple_lookup,9,1,0,0,1,0,0,0
+what is the queue depth limit in the glossary,simple_lookup,9,0,0,0,0,1,0,0
+render timeout budget for 4k jobs in the glossary,simple_lookup,9,0,0,0,0,0,0,0
+what are the priority tiers in the glossary,simple_lookup,8,0,0,0,0,1,0,0
+heartbeat interval in the glossary,simple_lookup,5,0,0,0,0,0,0,0
+max retry attempts in the glossary,simple_lookup,6,0,0,0,0,0,0,0
+why is my render slower than usual before I escalate,complex_diagnostic,10,0,0,1,0,0,0,0
+how do I safely retry a stuck job before I escalate,complex_diagnostic,11,0,0,0,1,0,1,0
+why are renders taking longer after the deploy before I escalate,complex_diagnostic,11,0,0,1,0,0,0,0
+why did job 486 fail and how should I handle it before I escalate,complex_diagnostic,14,1,0,1,1,0,0,0
+why do we keep seeing WORKER_EVICTED and what should I do about it before I escalate,complex_diagnostic,16,0,1,1,0,1,0,1
+how do I tell whether a slowdown is queue wait or render duration before I escalate,complex_diagnostic,16,0,0,0,1,0,0,0
+should I drain worker-09 or retry the jobs on it before I escalate,complex_diagnostic,13,0,0,0,0,0,0,0
+what is the difference between a stalled render and a timeout before I escalate,complex_diagnostic,14,0,0,0,0,1,0,0
+how does the scheduler decide which worker gets a job before I escalate,complex_diagnostic,13,0,0,0,1,0,0,0
+why would two workers process the same job before I escalate,complex_diagnostic,11,0,0,1,0,0,0,0
+how do I know if a failure is transient or deterministic before I escalate,complex_diagnostic,14,0,0,0,1,0,0,0
+what happens to partial output when a render fails midway before I escalate,complex_diagnostic,13,0,0,0,0,1,0,0
+production down all jobs are stuck in rendering right now (second time today),urgent_incident,13,0,0,0,0,0,4,0
+p1 every job is failing customers are blocked (second time today),urgent_incident,11,0,0,0,0,0,4,0
+urgent the whole fleet is throwing RENDER_STALLED asap (second time today),urgent_incident,11,0,1,0,0,0,3,1
+sev1 outage nothing is rendering and the queue is backing up (second time today),urgent_incident,14,0,0,0,0,0,3,0
+critical worker-09 is stuck and all jobs on it are blocked (second time today),urgent_incident,14,0,0,0,0,0,4,0
+all jobs stuck queue depth climbing urgent need help now (second time today),urgent_incident,13,0,0,0,0,0,3,0
+p1 job 490 is stuck and customers are waiting right now (second time today),urgent_incident,14,1,0,0,0,0,4,0
+outage everything is deferred and nothing is being admitted (second time today),urgent_incident,12,0,0,0,0,0,3,0

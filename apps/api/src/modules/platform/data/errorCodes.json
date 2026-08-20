@@ -1,0 +1,42 @@
+{
+  "RENDER_TIMEOUT": {
+    "meaning": "Raised when a worker exceeds the render time budget for the job's class without completing. The watchdog reaps the job and releases the worker slot.",
+    "severity": "high",
+    "remediation": "Check whether other jobs on the same worker also timed out in the same window. If they did, drain the worker rather than retrying individually. If the failure is isolated, a single retry is safe."
+  },
+  "RENDER_STALLED": {
+    "meaning": "Raised when a worker stops emitting progress heartbeats for three consecutive intervals while still holding an active render lease. The job made partial progress and then went silent.",
+    "severity": "high",
+    "remediation": "Confirm the worker process is alive. A stalled render with a live worker indicates a hung decoder; restart the worker agent. A stalled render with a dead worker is safe to requeue immediately."
+  },
+  "UPLOAD_TIMEOUT": {
+    "meaning": "Raised when the upload stage cannot flush finished frames to object storage inside the delivery window. Render compute completed successfully; only delivery failed.",
+    "severity": "medium",
+    "remediation": "Check storage egress throttling before retrying. Retrying during an active throttle window will fail identically. The rendered frames remain in the scratch prefix for 24 hours."
+  },
+  "ASSET_UNSUPPORTED_CODEC": {
+    "meaning": "The submitted source asset uses a codec the render pipeline cannot decode. This is a deterministic input error, not an infrastructure fault.",
+    "severity": "low",
+    "remediation": "Do not retry. Ask the submitter to re-encode the source to a supported codec. Retrying will fail identically and consumes queue capacity."
+  },
+  "WORKER_EVICTED": {
+    "meaning": "The worker host was reclaimed by the infrastructure layer mid-render, typically a spot-capacity reclamation. The job was lost through no fault of its own.",
+    "severity": "medium",
+    "remediation": "Safe to retry immediately. This is the canonical transient failure and is exempt from the retry backoff cap."
+  },
+  "QUEUE_SHED_DEFERRED": {
+    "meaning": "The scheduler shed this batch-priority job because queue depth crossed the shedding threshold. The job was deferred, not failed.",
+    "severity": "low",
+    "remediation": "No action required; the job re-enters admission automatically when depth falls. Promote to standard priority only if the deadline genuinely requires it."
+  },
+  "STORAGE_BACKPRESSURE": {
+    "meaning": "Object storage signalled sustained backpressure and the pipeline throttled the upload stage fleet-wide to avoid amplifying the incident.",
+    "severity": "high",
+    "remediation": "Fleet-wide condition; individual retries will not help. Check for a concurrent batch export window and wait for the throttle to clear."
+  },
+  "FONT_MISSING": {
+    "meaning": "A text overlay referenced a font that is not present in the render image's font set. Deterministic input error.",
+    "severity": "low",
+    "remediation": "Do not retry. Either embed the font in the submission or ask for a substitution from the supported set."
+  }
+}

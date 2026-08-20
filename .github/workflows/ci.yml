@@ -1,0 +1,239 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same ref makes the older run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  lint:
+    name: lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: eslint
+        run: npm run lint
+
+      - name: tsc --noEmit
+        run: npm run typecheck
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+
+    services:
+      # The integration suites run against real Postgres. The bandit's
+      # correctness depends on `on conflict`, `returning`, and atomic
+      # increments, and the store depends on jsonb round-tripping — a fake would
+      # agree with whatever the code does and prove none of it.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: copilot
+          POSTGRES_PASSWORD: copilot
+          POSTGRES_DB: mediaops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U copilot -d mediaops_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_CLIENT: pg
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_USER: copilot
+      DB_PASSWORD: copilot
+      DB_DATABASE: mediaops_test
+      TEST_DB_DATABASE: mediaops_test
+      DB_SSL: 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: apply migrations
+        run: npm run migrate --workspace=apps/api
+
+      # No Ollama in CI. The fake adapter and the fixed-vector embedder cover the
+      # agent and retrieval paths, so the suite is fast and non-flaky and the
+      # dependency-down cases are tested rather than skipped.
+      - name: api suite (unit + integration)
+        run: npm run test --workspace=apps/api
+
+      - name: fail if the database-backed suites silently skipped
+        run: |
+          # These suites skip when Postgres is unreachable, which is right
+          # locally and wrong in CI — a green run that tested nothing is worse
+          # than a red one.
+          output=$(npm run --silent test --workspace=apps/api 2>&1)
+          echo "$output"
+          if echo "$output" | grep -qi 'Postgres is not reachable'; then
+            echo "::error::Database-backed suites skipped in CI — the postgres service is not reachable."
+            exit 1
+          fi
+
+      - name: console suite
+        run: npm run test --workspace=apps/web
+
+  ml:
+    name: classifier reproducibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: npm ci
+      - run: pip install -r ml/requirements.txt
+
+      # Regenerate the dataset from the committed feature extractor, then train
+      # with real scikit-learn. Running this in CI is what stops model.json and
+      # metrics_report.md drifting from the code that produced them.
+      - name: regenerate dataset
+        run: npm run ml:dataset
+
+      - name: train (scikit-learn)
+        run: npm run ml:train:python
+
+      - name: fail if the committed dataset is stale
+        run: |
+          if ! git diff --quiet -- ml/synthetic_dataset.csv; then
+            echo "::error::ml/synthetic_dataset.csv is out of date with features.ts — run 'npm run ml:dataset' and commit."
+            git diff --stat -- ml/synthetic_dataset.csv
+            exit 1
+          fi
+
+      # The weights themselves are allowed to move (a different solver on a
+      # different platform will not land on identical floats); what must hold is
+      # that the retrained model still satisfies the serving contract.
+      - name: verify the retrained model still serves
+        run: npm run test --workspace=apps/api -- test/classifier.test.ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: classifier-metrics
+          path: |
+            ml/metrics_report.md
+            apps/api/src/modules/classifier/model.json
+
+  build:
+    name: docker build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Built on every PR: a broken image is a broken build, caught before merge
+      # rather than at deploy.
+      - name: build api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          load: true
+          tags: mediaops-copilot-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          load: true
+          tags: mediaops-copilot-web:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: smoke test the api image against real postgres
+        run: |
+          docker network create smoke
+          docker run -d --name smoke-db --network smoke \
+            -e POSTGRES_USER=copilot -e POSTGRES_PASSWORD=copilot -e POSTGRES_DB=mediaops \
+            postgres:16-alpine
+          for i in $(seq 1 30); do
+            if docker exec smoke-db pg_isready -U copilot -d mediaops; then break; fi
+            sleep 2
+          done
+
+          docker run -d --name api-smoke --network smoke -p 8080:8080 \
+            -e DB_HOST=smoke-db -e DB_USER=copilot -e DB_PASSWORD=copilot -e DB_DATABASE=mediaops \
+            mediaops-copilot-api:${{ github.sha }}
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health > /tmp/health.json; then break; fi
+            sleep 2
+          done
+          cat /tmp/health.json
+
+          # Degraded is the expected state here: there is no Ollama in CI, and
+          # the contract says a degraded instance keeps serving.
+          status=$(node -e "process.stdout.write(require('/tmp/health.json').status)")
+          echo "health status: $status"
+          test "$status" != "down"
+
+          # The entrypoint must have applied migrations — otherwise Postgres
+          # would be reachable but every table missing, which reads as 'up'.
+          node -e "const c=require('/tmp/health.json').checks; if(c.postgres.status!=='up') throw new Error('postgres not up')"
+
+          curl -fsS -X POST http://localhost:8080/query \
+            -H 'content-type: application/json' \
+            -d '{"query":"what does error code RENDER_TIMEOUT mean"}' | tee /tmp/query.json
+          node -e "const r=require('/tmp/query.json'); if(r.retrieval_path!=='vectorless') throw new Error('expected the deterministic path for an exact error-code match')"
+
+          docker rm -f api-smoke smoke-db
+          docker network rm smoke
+
+  deploy:
+    name: deploy (mock)
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    # Unreachable from a PR, and unreachable after a red test.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tag and publish
+        run: |
+          echo "All gates green on main — publishing mediaops-copilot:${GITHUB_SHA::7}"
+          echo "docker push registry.example.com/mediaops-copilot-api:${GITHUB_SHA::7}"
+          echo "docker push registry.example.com/mediaops-copilot-web:${GITHUB_SHA::7}"
+          echo "(mock deploy — no registry is configured for this build)"

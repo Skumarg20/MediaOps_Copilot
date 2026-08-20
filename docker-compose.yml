@@ -1,0 +1,106 @@
+# MediaOps Copilot — the whole system, locally, with no accounts and no keys.
+#
+#   docker compose up --build
+#   docker compose exec ollama ollama pull llama3.2:3b
+#   docker compose exec ollama ollama pull qwen2.5:3b
+#   docker compose exec ollama ollama pull nomic-embed-text
+#
+# The API waits for Postgres (it cannot record or learn without it) but not for
+# Ollama, reporting `degraded` until the model runtime is warm. Start-up order is
+# a correctness dependency for the database and nothing else.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mediaops-postgres
+    environment:
+      POSTGRES_USER: copilot
+      POSTGRES_PASSWORD: copilot
+      POSTGRES_DB: mediaops
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U copilot -d mediaops']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mediaops-ollama
+    ports:
+      - '11434:11434'
+    volumes:
+      # Persisted so model pulls happen exactly once.
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ['CMD-SHELL', 'ollama list >/dev/null 2>&1 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: mediaops-api
+    ports:
+      - '8080:8080'
+    environment:
+      PROJECT_ENV: production
+      NODE_ENV: production
+      PORT: '8080'
+      LOG_LEVEL: info
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_USER: copilot
+      DB_PASSWORD: copilot
+      DB_DATABASE: mediaops
+      DB_SSL: 'false'
+      OLLAMA_BASE_URL: http://ollama:11434
+      # Hosted generation + local embeddings. Set OPENROUTER_API_KEY in a .env
+      # beside this file (compose reads it automatically) or export it in the
+      # shell. Without a key the API logs a warning and runs fully on Ollama.
+      LLM_PROVIDER: ${LLM_PROVIDER:-hybrid}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL_LLAMA: ${OPENROUTER_MODEL_LLAMA:-meta-llama/llama-3.2-3b-instruct}
+      OPENROUTER_MODEL_QWEN: ${OPENROUTER_MODEL_QWEN:-qwen/qwen-2.5-7b-instruct}
+    depends_on:
+      # Postgres must be reachable: the entrypoint runs migrations before boot,
+      # and a service that cannot record a decision has nothing honest to serve.
+      postgres:
+        condition: service_healthy
+      # Only `started` for Ollama — waiting on a model runtime would turn a
+      # degraded dependency into a failed boot, the opposite of the contract.
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the client bundle, so it must be the URL the *browser*
+        # uses — not the compose-internal hostname.
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+    container_name: mediaops-web
+    ports:
+      # Host port is overridable: 3000 is a popular default and something else on
+      # the machine often already owns it. The container port stays 3000.
+      - '${WEB_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  ollama-models:

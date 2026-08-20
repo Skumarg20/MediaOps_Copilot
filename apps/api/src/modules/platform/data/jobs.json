@@ -1,0 +1,134 @@
+[
+  {
+    "id": "482",
+    "status": "failed",
+    "failure_reason": "RENDER_TIMEOUT",
+    "worker": "worker-07",
+    "duration_s": 1802,
+    "queued_at": "2026-08-18T09:12:04Z",
+    "job_class": "4k",
+    "priority": "standard",
+    "submitter": "pipeline-batch"
+  },
+  {
+    "id": "483",
+    "status": "failed",
+    "failure_reason": "RENDER_TIMEOUT",
+    "worker": "worker-07",
+    "duration_s": 1811,
+    "queued_at": "2026-08-18T09:14:41Z",
+    "job_class": "4k",
+    "priority": "standard",
+    "submitter": "pipeline-batch"
+  },
+  {
+    "id": "484",
+    "status": "succeeded",
+    "failure_reason": null,
+    "worker": "worker-02",
+    "duration_s": 612,
+    "queued_at": "2026-08-18T09:20:10Z",
+    "job_class": "1080p",
+    "priority": "interactive",
+    "submitter": "studio-ui"
+  },
+  {
+    "id": "485",
+    "status": "failed",
+    "failure_reason": "ASSET_UNSUPPORTED_CODEC",
+    "worker": "worker-04",
+    "duration_s": 8,
+    "queued_at": "2026-08-18T10:02:55Z",
+    "job_class": "1080p",
+    "priority": "interactive",
+    "submitter": "studio-ui"
+  },
+  {
+    "id": "486",
+    "status": "rendering",
+    "failure_reason": null,
+    "worker": "worker-11",
+    "duration_s": 431,
+    "queued_at": "2026-08-18T10:41:19Z",
+    "job_class": "4k",
+    "priority": "standard",
+    "submitter": "pipeline-batch"
+  },
+  {
+    "id": "487",
+    "status": "failed",
+    "failure_reason": "UPLOAD_TIMEOUT",
+    "worker": "worker-03",
+    "duration_s": 744,
+    "queued_at": "2026-08-18T11:05:02Z",
+    "job_class": "1080p",
+    "priority": "batch",
+    "submitter": "archive-reprocess"
+  },
+  {
+    "id": "488",
+    "status": "queued_deferred",
+    "failure_reason": "QUEUE_SHED_DEFERRED",
+    "worker": null,
+    "duration_s": 0,
+    "queued_at": "2026-08-18T11:07:33Z",
+    "job_class": "1080p",
+    "priority": "batch",
+    "submitter": "archive-reprocess"
+  },
+  {
+    "id": "489",
+    "status": "failed",
+    "failure_reason": "WORKER_EVICTED",
+    "worker": "worker-09",
+    "duration_s": 288,
+    "queued_at": "2026-08-18T11:22:47Z",
+    "job_class": "preview",
+    "priority": "interactive",
+    "submitter": "studio-ui"
+  },
+  {
+    "id": "490",
+    "status": "succeeded",
+    "failure_reason": null,
+    "worker": "worker-02",
+    "duration_s": 1104,
+    "queued_at": "2026-08-18T12:00:00Z",
+    "job_class": "4k",
+    "priority": "standard",
+    "submitter": "pipeline-batch"
+  },
+  {
+    "id": "491",
+    "status": "failed",
+    "failure_reason": "RENDER_STALLED",
+    "worker": "worker-07",
+    "duration_s": 921,
+    "queued_at": "2026-08-18T12:31:12Z",
+    "job_class": "4k",
+    "priority": "standard",
+    "submitter": "pipeline-batch"
+  },
+  {
+    "id": "492",
+    "status": "assigned",
+    "failure_reason": null,
+    "worker": "worker-05",
+    "duration_s": 0,
+    "queued_at": "2026-08-18T12:48:58Z",
+    "job_class": "1080p",
+    "priority": "interactive",
+    "submitter": "studio-ui"
+  },
+  {
+    "id": "493",
+    "status": "failed",
+    "failure_reason": "FONT_MISSING",
+    "worker": "worker-06",
+    "duration_s": 14,
+    "queued_at": "2026-08-18T13:03:21Z",
+    "job_class": "preview",
+    "priority": "batch",
+    "submitter": "archive-reprocess"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "name": "mediaops-copilot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-optimizing support agent for a media-generation / render-orchestration platform",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/api & npm run dev --workspace=apps/web",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "format": "npm run format --workspaces --if-present",
+    "migrate": "npm run migrate --workspace=apps/api",
+    "migrate:rollback": "npm run migrate:rollback --workspace=apps/api",
+    "ml:dataset": "npm run ml:dataset --workspace=apps/api",
+    "ml:train": "node ml/train_fallback.mjs",
+    "ml:train:python": "python ml/train_triage_classifier.py"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
