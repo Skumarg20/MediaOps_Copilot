@@ -74,9 +74,6 @@ def render_report(
         for i, row in enumerate(cm)
     )
 
-    # Describe the confusion the run actually produced rather than the one we
-    # predicted. A report that asserts an expected error mode the matrix
-    # contradicts is worse than no interpretation at all.
     worst_actual, worst_predicted, worst_count = None, None, 0
     for i, row in enumerate(cm):
         for j, count in enumerate(row):
@@ -180,8 +177,10 @@ def main() -> None:
     X_train_z = scaler.fit_transform(X_train)
     X_test_z = scaler.transform(X_test)
 
+    # `multi_class` is deliberately absent: scikit-learn deprecated it in 1.5 and
+    # removed it in 1.7. With `lbfgs` and three classes the fit is multinomial
+    # anyway, so dropping the argument keeps the behaviour and works on both.
     clf = LogisticRegression(
-        multi_class="multinomial",
         solver="lbfgs",
         max_iter=2000,
         C=1.0,
