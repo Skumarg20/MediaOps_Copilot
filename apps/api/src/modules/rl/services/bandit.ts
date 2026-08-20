@@ -15,6 +15,7 @@ interface ArmRow {
 	state: string;
 	action: string;
 	pulls: number;
+	ratedPulls: number;
 	meanReward: number;
 	lastUpdated: Date;
 }
@@ -24,6 +25,7 @@ function toStats(row: ArmRow): ArmStats {
 		state: row.state as TriageClass,
 		action: row.action,
 		pulls: row.pulls,
+		ratedPulls: row.ratedPulls,
 		meanReward: row.meanReward,
 		lastUpdated: row.lastUpdated instanceof Date ? row.lastUpdated.toISOString() : String(row.lastUpdated)
 	};
@@ -60,6 +62,7 @@ export class EpsilonGreedyBandit implements Policy {
 				state,
 				action: actionKey(action),
 				pulls: 0,
+				ratedPulls: 0,
 				meanReward: config.rl.optimisticInit,
 				lastUpdated: new Date()
 			}))
@@ -82,6 +85,7 @@ export class EpsilonGreedyBandit implements Policy {
 			state,
 			action: key,
 			pulls: 0,
+			ratedPulls: 0,
 			meanReward: config.rl.optimisticInit,
 			lastUpdated: new Date()
 		};
@@ -169,21 +173,30 @@ export class EpsilonGreedyBandit implements Policy {
 	 * Terminal phase: fold the realised reward into the running mean.
 	 * Q(s,a) <- Q(s,a) + (1/N)*(R - Q(s,a))
 	 *
-	 * N is the existing pull count, already incremented by `registerPull`, so the
-	 * first rated pull replaces the optimistic prior outright rather than
-	 * averaging against a number nobody observed.
+	 * N counts *rated* pulls, not pulls. Dividing by every pull the arm served
+	 * would let the unrated majority dilute each real observation — an arm pulled
+	 * twenty times and rated once would move by (R − Q)/20 and stay pinned near
+	 * the optimistic prior, which keeps it looking best and keeps it being chosen.
+	 * `pulls` still drives epsilon decay and exploration accounting, where every
+	 * pull genuinely counts.
+	 *
+	 * The first rated sample replaces the prior outright rather than averaging
+	 * against a number nobody observed.
 	 */
 	async update(state: TriageClass, action: Action, reward: number): Promise<ArmStats> {
 		const key = actionKey(action);
 		const current = await this.row(state, key);
 
-		const n = Math.max(1, current.pulls);
-		const isFirstRealSample = current.pulls <= 1;
-		const mean = isFirstRealSample ? reward : current.meanReward + (reward - current.meanReward) / n;
+		const ratedSamples = current.ratedPulls + 1;
+		const mean = ratedSamples <= 1 ? reward : current.meanReward + (reward - current.meanReward) / ratedSamples;
 
 		const [updated] = (await this.trx('copilot.banditArm')
 			.where({ state, action: key })
-			.update({ meanReward: Number(mean.toFixed(6)), lastUpdated: new Date() })
+			.update({
+				meanReward: Number(mean.toFixed(6)),
+				ratedPulls: this.trx.raw('?? + 1', ['ratedPulls']),
+				lastUpdated: new Date()
+			})
 			.returning('*')) as ArmRow[];
 
 		const stats = toStats(updated!);
@@ -193,7 +206,8 @@ export class EpsilonGreedyBandit implements Policy {
 			action: key,
 			reward,
 			new_mean: stats.meanReward,
-			pulls: stats.pulls
+			pulls: stats.pulls,
+			rated_pulls: stats.ratedPulls
 		});
 		return stats;
 	}

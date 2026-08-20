@@ -170,6 +170,38 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			// Silence must read as neither approval nor disapproval.
 			expect(stats?.meanReward).toBe(5);
 		});
+
+		it('divides by rated samples, so unrated pulls cannot dilute a real observation', async () => {
+			const bandit = await freshBandit({ epsilon: 0 });
+			const state: TriageClass = 'simple_lookup';
+
+			// Twenty served queries, nineteen of which nobody ever rates.
+			for (let i = 0; i < 20; i += 1) await bandit.registerPull(state, VECTOR_QWEN);
+
+			const rated = await bandit.update(state, VECTOR_QWEN, 8);
+
+			// Dividing by `pulls` would leave this at 5 + (8-5)/20 = 5.15, pinning the
+			// arm near its optimistic prior and keeping it permanently attractive.
+			expect(rated.pulls).toBe(20);
+			expect(rated.ratedPulls).toBe(1);
+			expect(rated.meanReward).toBeCloseTo(8, 4);
+		});
+
+		it('averages across rated samples regardless of how many pulls went unrated', async () => {
+			const bandit = await freshBandit({ epsilon: 0 });
+			const state: TriageClass = 'complex_diagnostic';
+
+			await bandit.registerPull(state, VECTORLESS_LLAMA);
+			await bandit.update(state, VECTORLESS_LLAMA, 10);
+
+			for (let i = 0; i < 5; i += 1) await bandit.registerPull(state, VECTORLESS_LLAMA);
+			const second = await bandit.update(state, VECTORLESS_LLAMA, 0);
+
+			expect(second.pulls).toBe(6);
+			expect(second.ratedPulls).toBe(2);
+			// The mean of the two ratings that actually arrived, not of the six pulls.
+			expect(second.meanReward).toBeCloseTo(5, 4);
+		});
 	});
 
 	describe('selection', () => {

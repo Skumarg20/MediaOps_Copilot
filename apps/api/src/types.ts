@@ -66,6 +66,8 @@ export type ArmStats = {
   state: TriageClass;
   action: ActionKey;
   pulls: number;
+  /** Pulls whose reward actually arrived; the N the sample-mean update divides by. */
+  ratedPulls: number;
   meanReward: number;
   lastUpdated: string;
 };

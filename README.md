@@ -29,6 +29,10 @@ uncertain part of that decision is handed to a learner.
 
 ## Quick start
 
+Everything a fresh machine needs — Node, Docker, Postgres, model weights, ports,
+env files, and the Python packages for the reference trainer — is listed in
+[`requirements.txt`](./requirements.txt).
+
 ### Docker (everything: Postgres, Ollama, API, console)
 
 ```bash
@@ -256,7 +260,7 @@ instead — the behaviour the routing design depends on.
 | **Action** | `(path, model)` ∈ `{vector, vectorless} × {llama3.2, qwen2.5}` — 4 arms, **masked to 2** when a rule pins the path |
 | **Policy** | ε-greedy, ε = 0.2 decaying to 0.05 as pulls accumulate |
 | **Reward** | `R = (feedback × 10) − latency_seconds − hallucination_penalty`, feedback ∈ {0, 1} |
-| **Update** | Incremental sample mean, `Q ← Q + (R − Q)/N` |
+| **Update** | Incremental sample mean, `Q ← Q + (R − Q)/N`, N = rated pulls |
 
 The `10×` weight makes helpfulness dominate and latency the tie-breaker between paths of
 equal quality. Rewards are **legitimately negative** and nothing clamps at zero: an
@@ -437,7 +441,10 @@ request entry. Grepping one ID replays the entire decision path:
 ```
 
 Event names are a **closed vocabulary** (`triage.* router.* bandit.* retrieval.* agent.*
-grounding.* rl.* dep.*`), so alerts key on stable fields rather than message regexes.
+grounding.* rl.* dep.* boot.*`), so alerts key on stable fields rather than message regexes.
+Startup, shutdown and startup-failure are three distinct events (`boot.listening`,
+`boot.shutdown`, `boot.failed`) precisely so a crash loop is alertable without regexing
+the message.
 
 **Metrics.** `copilot_requests_total`, `copilot_request_duration_seconds`,
 `copilot_retrieval_hits`, `copilot_grounding_failures_total`, `copilot_rl_reward`,
@@ -446,6 +453,29 @@ grounding.* rl.* dep.*`), so alerts key on stable fields rather than message reg
 **Health.** Probes Postgres (`select 1`), the vector index, and both Ollama model tags.
 Postgres down is **fatal** → `503`. Everything else is **degraded** → `200`, so a load
 balancer sheds only genuinely dead instances while a degraded one keeps serving.
+
+**OpenTelemetry** (the assignment's optional bonus) is wired but **off by default** —
+traces are worth nothing without a collector, so `OTEL_ENABLED=true` is a deliberate act:
+
+```bash
+docker compose --profile telemetry up otel-collector   # OTLP on :4318, health on :13133
+OTEL_ENABLED=true npm run dev:api
+```
+
+All three signals export over OTLP/HTTP. Traces carry the auto-instrumented `pg`, `knex`
+and `http` spans plus one span per pipeline stage — `copilot.triage`, `copilot.retrieve`,
+`copilot.reason` — attributed with the triage class, chosen path, model arm, overlap and
+confidence band, so a trace tells the same story the rationale panel does.
+
+Logs are bridged to the Logs API by hand, in `otel/logBridge.ts`, rather than by
+`@opentelemetry/instrumentation-pino`. That instrumentation hooks CJS `require`, and pino
+is imported directly from ESM here, so it never patches — measured, not assumed: with the
+instrumentation alone, zero log records exported and no `trace_id` was injected, while
+`pg` and `knex` (required transitively as CJS) instrumented normally. Bridging at the
+pino stream covers every line and correlates it with the active span.
+
+Prometheus stays exactly as it was. `/metrics` is scrapeable with no collector anywhere
+in the picture, which is what keeps the service demonstrable on a laptop.
 
 ### If this broke at 3am
 
@@ -617,9 +647,11 @@ Stated plainly, because a system that claims to never guess should not guess abo
 - **Lexical overlap penalises legitimate paraphrase.** It fails safe — a good answer can
   land in Medium — but it is a proxy for entailment, not entailment. NLI is the documented
   upgrade.
-- **The pull count includes unrated pulls**, so `N` in the incremental mean drifts above
-  the number of rewards actually observed. Deliberate: exploration accounting stays
-  honest, at the cost of slightly damping later updates.
+- **The mean is over rated pulls, not all pulls.** `pulls` counts every query an arm
+  served and drives epsilon decay; `rated_pulls` counts the ones a rating arrived for and
+  is the `N` the sample mean divides by. Dividing by `pulls` — as this did until the
+  `bandit_rated_pulls` migration — let the unrated majority dilute each real observation,
+  which pinned heavily-served arms near the optimistic prior and kept them looking best.
 - **Open-ended synthesis is where the 3B arms actually differ — measured, not assumed.**
   Over 10 live draws of `why is my render slower than usual`: `vector|qwen2.5:3b`
   grounded 2 of 3, `vector|llama3.2:3b` grounded 0 of 2, and every `vectorless` draw
@@ -654,7 +686,7 @@ Stated plainly, because a system that claims to never guess should not guess abo
 - **The bandit's read-modify-write is not yet atomic.** `update()` reads the current mean
   and writes the new one in two statements. Single-process that is fine; with concurrent
   replicas two simultaneous ratings for the same arm could interleave and lose one. The
-  fix is a single `update … set mean_reward = mean_reward + (? - mean_reward) / pulls`
+  fix is a single `update … set mean_reward = mean_reward + (? - mean_reward) / rated_pulls`
   statement, which Postgres now makes possible — it was not, on SQLite.
 - **The test embedder is a hand-authored concept space**, not a learned one. It exists so
   CI can exercise the vector path deterministically without a model runtime — it is not a

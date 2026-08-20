@@ -84,6 +84,7 @@ export type ArmStat = {
   path: RetrievalPath;
   model: ModelArm;
   pulls: number;
+  rated_pulls: number;
   mean_reward: number;
   pull_share: number;
   last_updated: string;

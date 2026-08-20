@@ -25,6 +25,7 @@ export class OpenRouterAdapter implements LlmAdapter {
 	);
 
 	private modelsCache: { at: number; slugs: Set<string> } | null = null;
+	private catalogueRefresh: Promise<Set<string>> | null = null;
 
 	constructor(private readonly apiKey: string = process.env.OPENROUTER_API_KEY ?? '') {}
 
@@ -68,29 +69,57 @@ export class OpenRouterAdapter implements LlmAdapter {
 	 * Probes the catalogue so a mistyped or retired model slug shows up as a
 	 * masked arm — the bandit simply stops selecting it — instead of surfacing as
 	 * a runtime failure on every query that happens to draw it.
+	 *
+	 * Stale-while-revalidate, because the caller is the request path and the
+	 * measured latency of a request becomes the latency term of that arm's
+	 * reward. A blocking refresh would charge one query per TTL for a network
+	 * round trip that has nothing to do with the arm it was routed to, quietly
+	 * adding noise to the very signal the policy learns from. A cached answer is
+	 * returned immediately and the refresh happens behind it.
 	 */
 	async availableModels(): Promise<Set<string>> {
-		const now = Date.now();
-		if (this.modelsCache && now - this.modelsCache.at < config.ollama.probeTtlMs) {
+		const isFresh = this.modelsCache !== null && Date.now() - this.modelsCache.at < config.ollama.probeTtlMs;
+
+		if (this.modelsCache) {
+			if (!isFresh) void this.refreshCatalogue();
 			return this.toArmNames(this.modelsCache.slugs);
 		}
+
 		if (!this.apiKey) return new Set();
 
-		try {
-			const res = await fetch(`${config.openrouter.baseUrl}/models`, {
-				headers: { authorization: `Bearer ${this.apiKey}` },
-				signal: AbortSignal.timeout(5_000)
-			});
-			if (!res.ok) throw new Error(`models endpoint responded ${res.status}`);
+		return this.toArmNames(await this.refreshCatalogue());
+	}
 
-			const body = (await res.json()) as { data?: Array<{ id?: string }> };
-			const slugs = new Set((body.data ?? []).map((entry) => entry.id).filter((id): id is string => Boolean(id)));
-			this.modelsCache = { at: now, slugs };
-			return this.toArmNames(slugs);
-		} catch {
-			this.modelsCache = { at: now, slugs: new Set() };
-			return new Set();
-		}
+	/**
+	 * One refresh in flight at a time: a burst of concurrent queries past the TTL
+	 * would otherwise each open their own connection to the catalogue.
+	 */
+	private refreshCatalogue(): Promise<Set<string>> {
+		if (this.catalogueRefresh) return this.catalogueRefresh;
+
+		this.catalogueRefresh = (async () => {
+			try {
+				const res = await fetch(`${config.openrouter.baseUrl}/models`, {
+					headers: { authorization: `Bearer ${this.apiKey}` },
+					signal: AbortSignal.timeout(5_000)
+				});
+				if (!res.ok) throw new Error(`models endpoint responded ${res.status}`);
+
+				const body = (await res.json()) as { data?: Array<{ id?: string }> };
+				const slugs = new Set(
+					(body.data ?? []).map((entry) => entry.id).filter((id): id is string => Boolean(id))
+				);
+				this.modelsCache = { at: Date.now(), slugs };
+				return slugs;
+			} catch {
+				this.modelsCache = { at: Date.now(), slugs: new Set() };
+				return new Set<string>();
+			} finally {
+				this.catalogueRefresh = null;
+			}
+		})();
+
+		return this.catalogueRefresh;
 	}
 
 	private toArmNames(slugs: Set<string>): Set<string> {

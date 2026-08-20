@@ -23,6 +23,7 @@ async function buildStats({ limit }: { limit: number }) {
 			path: action.path,
 			model: action.model,
 			pulls: arm.pulls,
+			rated_pulls: arm.ratedPulls,
 			mean_reward: Number(arm.meanReward.toFixed(4)),
 			pull_share: totalPulls === 0 ? 0 : Number((arm.pulls / totalPulls).toFixed(4)),
 			last_updated: arm.lastUpdated
