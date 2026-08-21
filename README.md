@@ -29,15 +29,12 @@ Full list, including model weights and ports: [`requirements.txt`](./requirement
 git clone <repo-url> && cd MediaOps_Copilot
 
 # Optional but recommended: hosted generation, ~270 MB of local downloads
-# instead of ~4.2 GB. Get a key at https://openrouter.ai/keys.
-# On Windows use PowerShell's -Encoding ascii, NOT ">" -- the default redirect
-# writes UTF-16, which Docker Compose cannot parse:
-#   "OPENROUTER_API_KEY=sk-or-..." | Out-File .env -Encoding ascii
+# instead of ~4.2 GB. Get a key at https://openrouter.ai/keys
+# On Windows PowerShell, `>` writes UTF-16 and Compose rejects it - see below.
 echo "OPENROUTER_API_KEY=sk-or-..." > .env
 
-# Pulling the embedding model first is faster, but no longer required: if it is
-# missing at boot the API serves the vectorless path and retries the corpus index
-# in the background, picking the model up once it lands.
+# Pull the embedding model. Doing this before the API starts is the fast path;
+# a model pulled later is picked up on its own within a few minutes.
 docker compose up -d ollama
 docker compose exec ollama ollama pull nomic-embed-text
 
@@ -72,11 +69,18 @@ Verify before starting anything — the first bytes must be `4F 50 45 4E` (`OPEN
 Format-Hex .env | Select-Object -First 1
 ```
 
-**Already started it in the wrong order?** Pull the model, then restart so the API
-re-indexes. Environment changes need a recreate, not a restart:
+**Already started it in the wrong order?** Just pull the model:
 
 ```bash
 docker compose exec ollama ollama pull nomic-embed-text
+```
+
+The API builds the corpus index at boot, but a failed build is retried in the
+background on a widening interval (15s, 30s, 60s, 120s, 240s), so a model that lands
+during that window is picked up without a restart. Past it, force a recreate -
+environment changes need a recreate rather than a restart:
+
+```bash
 docker compose up -d --force-recreate api
 ```
 
