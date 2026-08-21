@@ -33,6 +33,7 @@ export const config = {
 		baseUrl: str('OLLAMA_BASE_URL', 'http://localhost:11434'),
 		generateTimeoutMs: num('OLLAMA_TIMEOUT_MS', 30_000),
 		embedTimeoutMs: num('OLLAMA_EMBED_TIMEOUT_MS', 15_000),
+		indexTimeoutMs: num('OLLAMA_INDEX_TIMEOUT_MS', 120_000),
 		embedModel: str('OLLAMA_EMBED_MODEL', 'nomic-embed-text'),
 		probeTtlMs: num('OLLAMA_PROBE_TTL_MS', 10_000),
 		circuitThreshold: num('OLLAMA_CIRCUIT_THRESHOLD', 3),
@@ -44,6 +45,13 @@ export const config = {
 
 	openrouter: {
 		baseUrl: str('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
+		generateTimeoutMs: num('OPENROUTER_TIMEOUT_MS', 30_000),
+		maxTokens: num('OPENROUTER_MAX_TOKENS', 512),
+		// The hosted catalogue changes far less often than a local Ollama tag list,
+		// so it is cached for minutes rather than seconds.
+		probeTtlMs: num('OPENROUTER_PROBE_TTL_MS', 300_000),
+		circuitThreshold: num('OPENROUTER_CIRCUIT_THRESHOLD', 3),
+		circuitResetMs: num('OPENROUTER_CIRCUIT_RESET_MS', 30_000),
 		models: {
 			'llama3.2:3b': str('OPENROUTER_MODEL_LLAMA', 'meta-llama/llama-3.2-3b-instruct'),
 			'qwen2.5:3b': str('OPENROUTER_MODEL_QWEN', 'qwen/qwen-2.5-7b-instruct')

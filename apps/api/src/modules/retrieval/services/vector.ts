@@ -60,7 +60,9 @@ export class VectorRetriever implements Retriever {
     }
 
     try {
-      const vectors = await this.llm.embed(chunks.map((c) => c.text));
+      const vectors = await this.llm.embed(chunks.map((c) => c.text), {
+        timeoutMs: config.ollama.indexTimeoutMs,
+      });
       this.index = chunks.map((c, i) => ({ ...c, vector: vectors[i] ?? [] }));
       this.lastError = null;
       logEvent(logger, 'info', 'boot.indexed', {

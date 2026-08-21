@@ -60,7 +60,7 @@ services:
       postgres:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   web:

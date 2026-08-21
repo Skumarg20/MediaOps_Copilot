@@ -1,25 +1,25 @@
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { createOpenRouter, type OpenRouterProvider } from '@openrouter/ai-sdk-provider';
 import { generateText } from 'ai';
 import { config } from '@/config.js';
 import { CircuitBreaker, logEvent, logger, recordDependency } from '@/utils/index.js';
 import type { DependencyStatus, ModelArm } from '@/types.js';
 import { LlmUnavailableError, type GenerateRequest, type GenerateResult, type LlmAdapter } from './llm.types.js';
 
-export const openrouterProvider = createOpenRouter({
-	apiKey: process.env.OPENROUTER_API_KEY ?? ''
-});
+const CATALOGUE_TIMEOUT_MS = 5_000;
 
 export class OpenRouterAdapter implements LlmAdapter {
 	private readonly breaker = new CircuitBreaker(
 		'openrouter.generate',
-		config.ollama.circuitThreshold,
-		config.ollama.circuitResetMs
+		config.openrouter.circuitThreshold,
+		config.openrouter.circuitResetMs
 	);
 
-	private modelsCache: { at: number; slugs: Set<string> } | null = null;
-	private catalogueRefresh: Promise<Set<string>> | null = null;
+	private readonly provider: OpenRouterProvider;
+	private catalogue: { at: number; slugs: Set<string> } | null = null;
 
-	constructor(private readonly apiKey: string = process.env.OPENROUTER_API_KEY ?? '') {}
+	constructor(private readonly apiKey: string = process.env.OPENROUTER_API_KEY ?? '') {
+		this.provider = createOpenRouter({ apiKey: this.apiKey });
+	}
 
 	private slugFor(model: ModelArm): string {
 		return config.openrouter.models[model];
@@ -36,13 +36,13 @@ export class OpenRouterAdapter implements LlmAdapter {
 		const started = Date.now();
 		try {
 			const result = await generateText({
-				model: openrouterProvider(this.slugFor(req.model)),
+				model: this.provider(this.slugFor(req.model)),
 				system: req.system,
 				prompt: req.prompt,
 				temperature: req.temperature ?? 0.1,
-				maxTokens: 512,
+				maxTokens: config.openrouter.maxTokens,
 				...(req.stop ? { stopSequences: req.stop } : {}),
-				abortSignal: AbortSignal.timeout(config.ollama.generateTimeoutMs)
+				abortSignal: AbortSignal.timeout(config.openrouter.generateTimeoutMs)
 			});
 
 			this.breaker.recordSuccess();
@@ -57,45 +57,33 @@ export class OpenRouterAdapter implements LlmAdapter {
 		throw new LlmUnavailableError('openrouter does not provide embeddings; pair it with a local embedder');
 	}
 
+	// Which arms the hosted catalogue is actually serving, cached for one probe TTL.
+	// An unreachable catalogue yields an empty set, which the pipeline reads as
+	// "mask nothing" rather than as an outage.
 	async availableModels(): Promise<Set<string>> {
-		const isFresh = this.modelsCache !== null && Date.now() - this.modelsCache.at < config.ollama.probeTtlMs;
-
-		if (this.modelsCache) {
-			if (!isFresh) void this.refreshCatalogue();
-			return this.toArmNames(this.modelsCache.slugs);
-		}
-
 		if (!this.apiKey) return new Set();
 
-		return this.toArmNames(await this.refreshCatalogue());
-	}
+		const now = Date.now();
+		if (this.catalogue && now - this.catalogue.at < config.openrouter.probeTtlMs) {
+			return this.toArmNames(this.catalogue.slugs);
+		}
 
-	private refreshCatalogue(): Promise<Set<string>> {
-		if (this.catalogueRefresh) return this.catalogueRefresh;
+		let slugs = new Set<string>();
+		try {
+			const res = await fetch(`${config.openrouter.baseUrl}/models`, {
+				headers: { authorization: `Bearer ${this.apiKey}` },
+				signal: AbortSignal.timeout(CATALOGUE_TIMEOUT_MS)
+			});
+			if (!res.ok) throw new Error(`models endpoint responded ${res.status}`);
 
-		this.catalogueRefresh = (async () => {
-			try {
-				const res = await fetch(`${config.openrouter.baseUrl}/models`, {
-					headers: { authorization: `Bearer ${this.apiKey}` },
-					signal: AbortSignal.timeout(5_000)
-				});
-				if (!res.ok) throw new Error(`models endpoint responded ${res.status}`);
+			const body = (await res.json()) as { data?: Array<{ id?: string }> };
+			slugs = new Set((body.data ?? []).map((entry) => entry.id).filter((id): id is string => Boolean(id)));
+		} catch {
+			slugs = new Set();
+		}
 
-				const body = (await res.json()) as { data?: Array<{ id?: string }> };
-				const slugs = new Set(
-					(body.data ?? []).map((entry) => entry.id).filter((id): id is string => Boolean(id))
-				);
-				this.modelsCache = { at: Date.now(), slugs };
-				return slugs;
-			} catch {
-				this.modelsCache = { at: Date.now(), slugs: new Set() };
-				return new Set<string>();
-			} finally {
-				this.catalogueRefresh = null;
-			}
-		})();
-
-		return this.catalogueRefresh;
+		this.catalogue = { at: now, slugs };
+		return this.toArmNames(slugs);
 	}
 
 	private toArmNames(slugs: Set<string>): Set<string> {
@@ -106,24 +94,29 @@ export class OpenRouterAdapter implements LlmAdapter {
 		return armNames;
 	}
 
+	private generationStatus(available: Set<string>, latencyMs: number): DependencyStatus {
+		const name = 'openrouter.generation';
+
+		if (!this.apiKey) {
+			return { name, status: 'degraded', detail: 'OPENROUTER_API_KEY is not set', latencyMs };
+		}
+		if (available.size === 0) {
+			return { name, status: 'degraded', detail: 'catalogue unreachable', latencyMs };
+		}
+
+		const missing = config.models.filter((model: ModelArm) => !available.has(model));
+		if (missing.length > 0) {
+			const slugs = missing.map((model) => this.slugFor(model)).join(', ');
+			return { name, status: 'degraded', detail: `model slugs not served: ${slugs}`, latencyMs };
+		}
+
+		return { name, status: 'up', latencyMs };
+	}
+
 	async health(): Promise<{ generation: DependencyStatus; embedding: DependencyStatus }> {
 		const started = Date.now();
 		const available = await this.availableModels();
-		const latencyMs = Date.now() - started;
-
-		const missing = config.models.filter((model: ModelArm) => !available.has(model));
-		const generation: DependencyStatus = !this.apiKey
-			? { name: 'openrouter.generation', status: 'degraded', detail: 'OPENROUTER_API_KEY is not set', latencyMs }
-			: available.size === 0
-				? { name: 'openrouter.generation', status: 'degraded', detail: 'catalogue unreachable', latencyMs }
-				: missing.length > 0
-					? {
-							name: 'openrouter.generation',
-							status: 'degraded',
-							detail: `model slugs not served: ${missing.map((model) => this.slugFor(model)).join(', ')}`,
-							latencyMs
-						}
-					: { name: 'openrouter.generation', status: 'up', latencyMs };
+		const generation = this.generationStatus(available, Date.now() - started);
 
 		recordDependency(generation.name, generation.status);
 		logEvent(logger, 'debug', 'dep.probe', {

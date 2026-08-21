@@ -14,9 +14,14 @@ export type GenerateResult = {
   latencyMs: number;
 };
 
+export type EmbedOptions = {
+  /** Overrides the adapter default. Used by corpus indexing, which tolerates a cold model load. */
+  timeoutMs?: number;
+};
+
 export interface LlmAdapter {
   generate(req: GenerateRequest): Promise<GenerateResult>;
-  embed(texts: string[]): Promise<number[][]>;
+  embed(texts: string[], opts?: EmbedOptions): Promise<number[][]>;
   availableModels(): Promise<Set<string>>;
   health(): Promise<{ generation: DependencyStatus; embedding: DependencyStatus }>;
 }

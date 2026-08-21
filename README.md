@@ -29,12 +29,15 @@ Full list, including model weights and ports: [`requirements.txt`](./requirement
 git clone <repo-url> && cd MediaOps_Copilot
 
 # Optional but recommended: hosted generation, ~270 MB of local downloads
-# instead of ~4.2 GB. Get a key at https://openrouter.ai/keys
+# instead of ~4.2 GB. Get a key at https://openrouter.ai/keys.
+# On Windows use PowerShell's -Encoding ascii, NOT ">" -- the default redirect
+# writes UTF-16, which Docker Compose cannot parse:
+#   "OPENROUTER_API_KEY=sk-or-..." | Out-File .env -Encoding ascii
 echo "OPENROUTER_API_KEY=sk-or-..." > .env
 
-# Pull the embedding model BEFORE the API starts. The vector index is built
-# once at boot, so a model pulled afterwards leaves the vector path disabled
-# until the API restarts.
+# Pulling the embedding model first is faster, but no longer required: if it is
+# missing at boot the API serves the vectorless path and retries the corpus index
+# in the background, picking the model up once it lands.
 docker compose up -d ollama
 docker compose exec ollama ollama pull nomic-embed-text
 

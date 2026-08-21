@@ -6,6 +6,7 @@ import {
   LlmUnavailableError,
   type GenerateRequest,
   type GenerateResult,
+  type EmbedOptions,
   type LlmAdapter,
 } from './llm.types.js';
 
@@ -22,7 +23,13 @@ async function fetchJson<T>(url: string, init: RequestInit, timeoutMs: number): 
     return (await res.json()) as T;
   } catch (err) {
     if (err instanceof LlmUnavailableError) throw err;
-    throw new LlmUnavailableError(`${url} unreachable`, err);
+    // AbortError here is our own timer, not a network fault. Saying 'unreachable'
+    // sends people hunting a connectivity problem that does not exist.
+    const timedOut = err instanceof Error && err.name === 'AbortError';
+    throw new LlmUnavailableError(
+      timedOut ? `${url} timed out after ${timeoutMs}ms` : `${url} unreachable`,
+      err,
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -119,7 +126,7 @@ export class OllamaAdapter implements LlmAdapter {
     );
   }
 
-  async embed(texts: string[]): Promise<number[][]> {
+  async embed(texts: string[], opts: EmbedOptions = {}): Promise<number[][]> {
     if (texts.length === 0) return [];
     if (this.embedBreaker.isOpen) {
       throw new LlmUnavailableError('ollama embedding circuit is open');
@@ -135,7 +142,7 @@ export class OllamaAdapter implements LlmAdapter {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ model: config.ollama.embedModel, prompt: text }),
           },
-          config.ollama.embedTimeoutMs,
+          opts.timeoutMs ?? config.ollama.embedTimeoutMs,
         );
         if (!body.embedding || body.embedding.length === 0) {
           throw new LlmUnavailableError('ollama returned an empty embedding');
