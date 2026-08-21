@@ -1,5 +1,6 @@
 import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { config } from '@/config.js';
 import { setDb } from '@/connections/index.js';
 import { EpsilonGreedyBandit, rlService } from '@/modules/rl/index.js';
 import type { Action, TriageClass } from '@/types.js';
@@ -9,6 +10,9 @@ const { actionKey, allActions, computeReward, hallucinationPenaltyFor, maskActio
 
 const VECTORLESS_LLAMA: Action = { path: 'vectorless', model: 'llama3.2:3b' };
 const VECTOR_QWEN: Action = { path: 'vector', model: 'qwen2.5:3b' };
+
+
+const PRIOR = config.rl.optimisticInit;
 
 describe('reward function', () => {
 	it('weights helpfulness an order of magnitude above latency', () => {
@@ -133,7 +137,7 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			const before = (await bandit.snapshot()).find(
 				(arm) => arm.state === state && arm.action === actionKey(VECTOR_QWEN)
 			);
-			expect(before?.meanReward).toBe(5);
+			expect(before?.meanReward).toBe(PRIOR);
 
 			await bandit.registerPull(state, VECTOR_QWEN);
 			const after = await bandit.update(state, VECTOR_QWEN, -3);
@@ -151,7 +155,7 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			);
 
 			expect(stats?.pulls).toBe(1);
-			expect(stats?.meanReward).toBe(5);
+			expect(stats?.meanReward).toBe(PRIOR);
 		});
 
 		it('divides by rated samples, so unrated pulls cannot dilute a real observation', async () => {
@@ -189,7 +193,7 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			const state: TriageClass = 'simple_lookup';
 
 			await bandit.registerPull(state, VECTOR_QWEN);
-			await bandit.update(state, VECTOR_QWEN, 9);
+			await bandit.update(state, VECTOR_QWEN, PRIOR + 4);
 
 			for (let i = 0; i < 10; i += 1) {
 				const decision = await bandit.select(state, allActions());
