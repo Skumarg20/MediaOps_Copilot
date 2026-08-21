@@ -133,6 +133,19 @@ export async function runReactLoop(
     }
 
     if (turn.isFinal && turn.answer.length > 0) {
+      const declined = /^\s*i\s*don'?t\s*know/i.test(turn.answer);
+
+      if (!declined && turn.citations.length === 0 && evidence.length > 0 && step < maxSteps) {
+        logEvent(opts.log, 'info', 'agent.step', { step, action: 'uncited_retry' });
+        steps.push({ step, thought: turn.thought, action: 'final_answer_uncited' });
+        history.push(
+          `Thought: ${turn.thought}`,
+          `Action: ${turn.action}`,
+          'Observation: that answer cited no evidence and was rejected. Re-answer using only the EVIDENCE block, put the [evidence_id] after each claim, and end with a Citations: line listing those ids.',
+        );
+        continue;
+      }
+
       steps.push({ step, thought: turn.thought, action: 'final_answer' });
       return {
         answer: turn.answer,

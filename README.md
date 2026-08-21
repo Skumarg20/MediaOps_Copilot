@@ -321,8 +321,16 @@ chosen.
 
 Silence is read as neither approval nor disapproval.
 
-**Cold start** uses optimistic initialisation (`Q₀ = 5.0`), so every arm is tried before
+**Cold start** uses optimistic initialisation (`Q₀ = 10.0`), so every arm is tried before
 any is abandoned. The first *rated* pull replaces the prior outright.
+
+`Q₀` must be **at least the maximum achievable reward**, which is what `feedback × 10`
+makes it. It was 5.0 until a live run proved why that is wrong: one Helpful rating scored
+9.94, and because every unexplored arm sat at 5.0, that single observation outranked all
+of them permanently. The arm took 64 of the next 66 pulls in its state while its
+alternatives stayed on 2 — and by then ε had decayed to its floor, so exploration could
+not undo it. A prior below the reward ceiling is not optimism; it is a head start for
+whichever arm happens to be rated first.
 
 **Write atomicity.** A rating and the policy update it causes commit together, as do a
 pull and the transaction record it belongs to. `update()` takes a row lock, so two
@@ -736,11 +744,108 @@ Prometheus is untouched — `/metrics` is scrapeable with no collector in the pi
 
 ### If this broke at 3am
 
-1. **`GET /health`** — which dependency flipped? Ollama down is the common case.
-2. **Grep the `transaction_id`** — one ID replays triage → route → retrieve → verify.
-3. **`copilot_grounding_failures_total`** rising → abstentions, not crashes.
-4. **`copilot_rl_reward`** per arm → is one arm dragging the policy down?
-5. **`FORCE_VECTORLESS=true`** — the escape hatch. Pins the deterministic path.
+**Classify it first.** Three failure shapes want three different runbooks, and the
+expensive mistake is running the wrong one against the wrong shape.
+
+| What you see | Shape | Runbook |
+|---|---|---|
+| 5xx, red status pill, crash loop | Something is **down** | **A** |
+| Answers turned into "I don't know" | It is **refusing**, not failing | **B** |
+| Answers still correct, latency climbing | It is **slow** | **C** |
+
+#### A — something is down
+
+1. **`copilot_dependency_up`** — the alertable form of `GET /health`: `1` up, `0.5`
+   degraded, `0` down, per dependency. Postgres at `0` is the only fatal one; everything
+   else is built to degrade rather than fail.
+2. **`boot.failed` against `boot.listening`** — both present and alternating is a crash
+   loop. `boot.failed` carrying `ECONNREFUSED` is almost always Postgres.
+3. **`dep.circuit_open`** — the breaker tripped on a model runtime. It half-opens after
+   the cooldown by itself and logs `dep.circuit_closed` on recovery. A single
+   `dep.circuit_open` is not an incident.
+
+#### B — it is refusing, not failing
+
+Work down the ladder. The earlier signal moves first, so start at the top.
+
+1. **`copilot_retrieval_hits`, bucket `0`** — the *leading* indicator. A zero-hit
+   retrieval is a floor miss, and floor misses precede grounding failures. Pair it with
+   `retrieval.floor_miss` in the logs, which carries both the top score and the floor it
+   failed to clear — enough to tell corpus drift from a threshold that is simply wrong.
+2. **`copilot_grounding_failures_total`, by `reason`** — which gate tripped. Each reason
+   points somewhere different:
+
+   | `reason` | Means | Look at |
+   |---|---|---|
+   | `no_evidence` | Nothing was retrieved | Back to B1 |
+   | `low_overlap` | The answer drifted from its own citations | Model or corpus drift |
+   | `phantom_citation` | The model invented a source | The model runtime |
+   | `no_citations` | The model answered without citing | Prompt or model |
+   | `empty_answer` | The model returned nothing | The model runtime |
+
+3. **Pull one trace with `copilot.grounded=false`** and read `copilot.overlap` against
+   `copilot.confidence_band`. Overlap sitting just under the floor across many traces is
+   threshold tuning, not an outage.
+4. **`agent.degraded`** rising means the ReAct loop fell back to extractive answers:
+   generation is unreachable and the system is still serving. Correct behaviour, worth
+   knowing.
+
+#### C — it is slow
+
+1. **`copilot_request_duration_seconds`** is labelled by `path` **and** `model`. Split by
+   `model` first — one arm slow is a provider problem, every arm slow is yours.
+2. **Open one trace.** `copilot.triage`, `copilot.retrieve` and `copilot.reason` are
+   separate spans, so latency attributes to a stage with nothing further to instrument.
+   `copilot.reason` dominating the trace is the model runtime, not the pipeline.
+3. **`copilot.retrieve.fallback` present** means the vector path missed its floor and that
+   query paid for two retrievals. Frequent fallback is a vector-index problem arriving
+   disguised as a latency problem.
+4. **`copilot_process_*`** — event-loop lag and heap, if none of the above moved.
+
+#### Pivoting between the three signals
+
+The correlation is already wired. Use it instead of grepping blind:
+
+```
+log line ──(trace_id)──► trace ──► spans carry the decisions
+    │                               copilot.triage_class · copilot.retrieval_path
+    │                               copilot.model · copilot.exploring · copilot.degraded
+    └──(transaction_id)──► copilot.transaction ──► the stored rationale
+```
+
+Every log line carries `trace_id`, `span_id` and `transaction_id`. `transaction_id` is
+also the primary key of `copilot.transaction`, so a single identifier moves you between
+the live trace and the durable record of what the system decided and why — including for
+a request that finished hours ago and has no trace left.
+
+#### Do not do these
+
+- **Do not restart to clear abstentions while embeddings are down.** The vector index is
+  built **once, at boot**. Restarting with the embedding model unreachable brings the
+  service back with the vector path disabled until the *next* restart — turning a
+  recoverable degradation into a persistent one. Fix the dependency, then restart, in
+  that order.
+- **Do not truncate `copilot.*`.** It is the only copy of every rating anyone has ever
+  given. `platform.*` is re-seeded from the repo on boot and is safe to drop.
+- **`FORCE_VECTORLESS=true` is the escape hatch, not a fix.** It pins the deterministic
+  path and will make open-ended questions abstain. It buys determinism by giving up
+  coverage: the right trade at 3am, the wrong thing to leave switched on.
+
+#### What is worth a page
+
+| Signal | Page | Why |
+|---|---|---|
+| `copilot_dependency_up{dependency="postgres"} == 0` | **Yes** | Nothing can be recorded or learned |
+| `boot.failed` twice within five minutes | **Yes** | Crash loop |
+| `copilot_requests_total{status="5xx"}` rising | **Yes** | Real errors, not abstentions |
+| `copilot_grounding_failures_total` rising | No — ticket | Working as designed; a quality regression |
+| `copilot_retrieval_hits` zero-bucket rising | No — ticket | Leading indicator, not an outage |
+| `copilot_rl_reward` falling for one arm | No — ticket | The policy routes around it on its own |
+| `dep.circuit_open` | No | Self-healing by design |
+
+The split matters more than the thresholds: this system is built to abstain and degrade
+under failure, so most of its distress signals are **quality** regressions rather than
+availability ones. Paging on abstention rate trains the on-call to ignore the pager.
 
 ## Failure modes
 
@@ -839,6 +944,8 @@ database. Full annotated list: [`apps/api/.env.example`](./apps/api/.env.example
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Model runtime |
 | `FORCE_VECTORLESS` | `false` | 3am override — pin the deterministic path |
 | `VECTOR_SIMILARITY_FLOOR` | `0.45` | Below this, no evidence |
+| `VECTOR_COVERAGE_FLOOR` | `0.4` | Share of query terms a *weak* vector hit must cover |
+| `VECTOR_STRONG_SCORE` | `0.7` | At or above this similarity, the coverage floor is waived |
 | `BM25_SCORE_FLOOR` | `1.2` | Keyword score floor |
 | `BM25_COVERAGE_FLOOR` | `0.5` | Share of query terms a hit must cover |
 | `RL_EPSILON_START` / `_FLOOR` | `0.2` / `0.05` | Exploration schedule |

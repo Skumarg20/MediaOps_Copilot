@@ -23,7 +23,10 @@ export async function extractAnchors({ query }: { query: string }): Promise<Stru
 	]);
 
 	const upper = query.toUpperCase();
-	const foundCodes = [...errorCodes].filter((code) => upper.includes(code)).sort();
+	const separatorNormalised = upper.replace(/[\s-]+/g, '_');
+	const foundCodes = [...errorCodes]
+		.filter((code) => upper.includes(code) || separatorNormalised.includes(code))
+		.sort();
 
 	const numericTokens = query.match(/\b\d{1,10}\b/g) ?? [];
 	const hashedNumericTokens = (query.match(/#(\d{1,10})\b/g) ?? []).map((match) => match.slice(1));

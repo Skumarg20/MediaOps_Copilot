@@ -65,11 +65,12 @@ export async function runCase(
 	let pathUsed = pathChosen;
 	let fellBack = false;
 
-	if (evidence.length === 0 && pathChosen === 'vector' && strategy.fallback) {
-		const fallbackEvidence = await retrieveOn('vectorless', testCase.query, queryContext);
+	if (evidence.length === 0 && strategy.fallback) {
+		const alternatePath: RetrievalPath = pathChosen === 'vector' ? 'vectorless' : 'vector';
+		const fallbackEvidence = await retrieveOn(alternatePath, testCase.query, queryContext);
 		if (fallbackEvidence.length > 0) {
 			evidence = fallbackEvidence;
-			pathUsed = 'vectorless';
+			pathUsed = alternatePath;
 			fellBack = true;
 		}
 	}

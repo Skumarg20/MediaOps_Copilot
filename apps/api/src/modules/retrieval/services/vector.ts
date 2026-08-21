@@ -5,6 +5,7 @@ import { logEvent, logger } from '@/utils/index.js';
 import { recordDependency, retrievalHits } from '@/utils/index.js';
 import type { DependencyStatus, Evidence, QueryContext, Retriever } from '@/types.js';
 import type { LlmAdapter } from '@/connections/index.js';
+import { tokenize } from './bm25.js';
 import { chunkMarkdown, type Chunk } from './chunker.js';
 
 type IndexedChunk = Chunk & { vector: number[] };
@@ -100,17 +101,34 @@ export class VectorRetriever implements Retriever {
 
     const scored = this.index
       .map((chunk) => ({ chunk, score: cosine(queryVector, chunk.vector) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, config.retrieval.topK);
+      .sort((a, b) => b.score - a.score);
 
-    const aboveSimilarityFloor = scored.filter((hit) => hit.score >= config.retrieval.vectorFloor);
+    const queryTerms = new Set(tokenize(query));
+    const coverageOf = (text: string): number => {
+      if (queryTerms.size === 0) return 1;
+      const chunkTerms = new Set(tokenize(text));
+      let matched = 0;
+      for (const term of queryTerms) if (chunkTerms.has(term)) matched += 1;
+      return matched / queryTerms.size;
+    };
+
+    const aboveSimilarityFloor = scored
+      .filter(
+        (hit) =>
+          hit.score >= config.retrieval.vectorFloor &&
+          (hit.score >= config.retrieval.vectorStrongScore ||
+            coverageOf(hit.chunk.text) >= config.retrieval.vectorCoverage),
+      )
+      .slice(0, config.retrieval.topK);
 
     retrievalHits.observe({ path: this.name }, aboveSimilarityFloor.length);
     if (aboveSimilarityFloor.length === 0) {
       logEvent(logger, 'info', 'retrieval.floor_miss', {
         path: this.name,
         top_score: Number((scored[0]?.score ?? 0).toFixed(4)),
+        top_coverage: Number(coverageOf(scored[0]?.chunk.text ?? '').toFixed(4)),
         floor: config.retrieval.vectorFloor,
+        coverage_floor: config.retrieval.vectorCoverage,
       });
       return [];
     }

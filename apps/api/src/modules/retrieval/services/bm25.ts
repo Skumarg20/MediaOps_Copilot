@@ -18,11 +18,19 @@ const K1 = 1.5;
 const B = 0.75;
 
 export function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9_\s-]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+  const keep = (t: string): boolean => t.length > 1 && !STOPWORDS.has(t);
+  const out: string[] = [];
+
+  for (const raw of text.toLowerCase().replace(/[^a-z0-9_\s-]/g, ' ').split(/\s+/)) {
+    if (keep(raw)) out.push(raw);
+    if (!/[_-]/.test(raw)) continue;
+
+    for (const part of raw.split(/[_-]+/)) {
+      if (keep(part)) out.push(part);
+    }
+  }
+
+  return out;
 }
 
 export class Bm25Index {

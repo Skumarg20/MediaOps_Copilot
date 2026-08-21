@@ -56,6 +56,8 @@ export const config = {
 	retrieval: {
 		topK: num('RETRIEVAL_TOP_K', 3),
 		vectorFloor: num('VECTOR_SIMILARITY_FLOOR', 0.45),
+		vectorCoverage: num('VECTOR_COVERAGE_FLOOR', 0.4),
+		vectorStrongScore: num('VECTOR_STRONG_SCORE', 0.7),
 		bm25Floor: num('BM25_SCORE_FLOOR', 1.2),
 		bm25Coverage: num('BM25_COVERAGE_FLOOR', 0.5),
 		chunkSize: num('CHUNK_SIZE', 500),
@@ -71,7 +73,7 @@ export const config = {
 		epsilonStart: num('RL_EPSILON_START', 0.2),
 		epsilonFloor: num('RL_EPSILON_FLOOR', 0.05),
 		epsilonDecayPulls: num('RL_EPSILON_DECAY_PULLS', 40),
-		optimisticInit: num('RL_OPTIMISTIC_INIT', 5.0),
+		optimisticInit: num('RL_OPTIMISTIC_INIT', 10.0),
 		feedbackWeight: num('RL_FEEDBACK_WEIGHT', 10),
 		hallucinationPenalty: num('RL_HALLUCINATION_PENALTY', 5.0)
 	},

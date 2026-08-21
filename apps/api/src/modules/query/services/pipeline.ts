@@ -11,7 +11,7 @@ import { db } from '@/connections/index.js';
 import { insertTransaction } from '@/modules/transaction/index.js';
 import { annotateActiveSpan, withSpan } from '@/otel/index.js';
 import { childLogger, logEvent, requestDuration, retrievalHits } from '@/utils/index.js';
-import type { Evidence, GroundingVerdict, ModelArm, QueryContext, QueryResponse, Retriever } from '@/types.js';
+import type { Evidence, GroundingVerdict, ModelArm, QueryContext, QueryResponse, RetrievalPath, Retriever } from '@/types.js';
 
 export class NoPathAvailableError extends Error {
 	constructor(message: string) {
@@ -102,19 +102,23 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	let usedPath = path;
 	let fellBack = false;
 
-	if (evidence.length === 0 && path === 'vector') {
-		const deterministicFallbackEvidence = await withSpan(
+	if (evidence.length === 0) {
+		const alternatePath: RetrievalPath = path === 'vector' ? 'vectorless' : 'vector';
+		const alternateRetriever: Retriever = alternatePath === 'vector' ? ctx.vector : ctx.vectorless;
+
+		const fallbackEvidence = await withSpan(
 			'copilot.retrieve.fallback',
-			{ 'copilot.retrieval_path': 'vectorless' },
-			() => ctx.vectorless.retrieve(query, queryContext)
+			{ 'copilot.retrieval_path': alternatePath },
+			() => alternateRetriever.retrieve(query, queryContext)
 		);
-		if (deterministicFallbackEvidence.length > 0) {
-			evidence = deterministicFallbackEvidence;
-			usedPath = 'vectorless';
+
+		if (fallbackEvidence.length > 0) {
+			evidence = fallbackEvidence;
+			usedPath = alternatePath;
 			fellBack = true;
 			logEvent(log, 'info', 'retrieval.completed', {
-				path: 'vectorless',
-				mode: 'fallback_after_vector_floor_miss',
+				path: alternatePath,
+				mode: `fallback_after_${path}_floor_miss`,
 				hits: evidence.length
 			});
 		}
@@ -204,9 +208,9 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 		? {
 				...pin,
 				path: usedPath,
-				deterministic: true,
-				reason: `${pin.reason} The vector path returned nothing above its similarity floor, so the answer fell back to the deterministic path.`,
-				code: 'vector_unavailable'
+				deterministic: usedPath === 'vectorless',
+				reason: `${pin.reason} The ${path} path returned nothing above its floor, so the answer fell back to the ${usedPath} path.`,
+				code: usedPath === 'vectorless' ? 'vector_unavailable' : pin.code
 			}
 		: pin;
 
