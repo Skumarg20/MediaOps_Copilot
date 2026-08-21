@@ -180,6 +180,7 @@ Then click **Helpful / Unhelpful** in the console and watch the RL panel move.
 | `npm test` | All suites |
 | `npm run migrate` / `migrate:rollback` / `migrate:make` | Schema |
 | `npm run ml:dataset` / `ml:train` / `ml:train:python` | Classifier |
+| `npm run eval` | Golden-set evaluation → `ml/eval_report.md` |
 | `docker compose up --build` | Whole system |
 | `docker compose --profile telemetry up otel-collector` | OTLP collector |
 | `docker compose exec ollama ollama pull <model>` | Model weights |
@@ -354,6 +355,47 @@ is unfalsifiable. Overlap is cheap, deterministic, unit-testable, and fails safe
 `grounded: false`, flows through the same rating and reward path, and still costs the arm
 its penalty — so the policy learns to prefer paths that produce *verifiable* answers.
 
+## Evaluation
+
+Everything above is a claim. `npm run eval` is the harness that checks it, against a
+40-case golden set labelled from the fixtures — 28 answerable, 12 that must be refused.
+
+Each strategy runs the **real** routing, retrieval, agent and grounding code; only the
+path-selection policy and the gate are swapped. The model is a deterministic fake, so runs
+are reproducible and the measurement is of the machinery around the model rather than of a
+particular model's fluency.
+
+| Strategy | Routing acc. | False answers | Abstention F1 |
+|---|---|---|---|
+| **Routed (this system)** | **100%** | 3 / 12 | 81.8% |
+| Always vector | 35.7% | 3 / 12 | 56.3% |
+| Always vectorless | 64.3% | **1 / 12** | 73.3% |
+| Random path | 60.7% | 2 / 12 | 66.7% |
+
+*False answers* — answered something the golden set says is unanswerable — is the number
+that matters at 3am.
+
+**Routing is exactly right and it is not the whole story.** The router hits every labelled
+path, and beats every baseline on abstention F1. It does **not** win on false answers:
+always-vectorless produces one where the router produces three. All three of the router's
+misses arrive through the vector path on queries that are in-domain by vocabulary and
+unanswerable in fact — `write me a poem about rendering`, `what does error code
+TOTALLY_MADE_UP mean`, `what is the render budget for job 10000`. The similarity floor is
+doing less work against domain-shaped nonsense than the BM25 coverage floor does. That is
+a real finding about this design, produced by measuring it rather than by reasoning about
+it, and it is the first thing I would fix.
+
+**What the gate is worth** is measured by injection rather than argued. A deterministic
+adversary that fabricates a citation on every turn is run twice, gate on and gate off. Gate
+off: 30 answers reach the operator and **0%** of them carry a citation that resolves —
+every one attributed to a source never retrieved. Gate on: all 30 withheld, false answers
+0. The cost is visible in the same row — abstention F1 falls to 46.2%, because a model that
+untrustworthy costs the operator every legitimate answer too. The gate does what it
+promises and it is not free.
+
+Full results, including the per-case divergence table and the scope caveats, in
+[`ml/eval_report.md`](./ml/eval_report.md).
+
 ## Triage classifier
 
 Multinomial logistic regression over 8 interpretable features. Linearity is what makes
@@ -442,6 +484,212 @@ A grounded abstention is `200`, because "I don't know" is a correct answer.
 `−1` is accepted and normalised to `0`: silently 400-ing a rating an operator believed
 they gave is worse than accepting a legacy value.
 </details>
+
+## Console to stored result
+
+The sections above describe each decision in isolation. This one follows a single
+question from the operator's keystroke to the row it leaves in Postgres, and documents
+the parts of the surface the tables above do not cover.
+
+### The console
+
+Four components, one page, no client-side state machine — SWR keys are the coordination
+mechanism.
+
+| Component | Reads | Writes |
+|---|---|---|
+| `QueryBox` | — | `POST /query`, then revalidates both feed keys |
+| `TransactionTable` / `TransactionRow` | `transactions:25` | — |
+| `RationalePanel` | the row's embedded `rationale` | — |
+| `FeedbackButtons` | the row's `feedback` | `POST /feedback`, then revalidates `rl-stats` |
+| `RLPanel` | `rl-stats` | — |
+| `StatusPill` | `health`, polled every 8s | — |
+
+```
+operator submits
+  │
+  ├─► POST /query ─────────────────► pipeline runs, row committed
+  │      │
+  │      └─ onAnswered()
+  │           ├─ mutate("transactions:25") ─► GET /transactions?limit=25
+  │           │                                 └─ row appears: answer · path · model ·
+  │           │                                    band · Helpful / Unhelpful
+  │           └─ mutate("rl-stats") ────────► GET /rl/stats
+  │                                             └─ pull count moves
+  │
+  └─► operator expands the row  ─────► RationalePanel renders the stored rationale
+  │                                    (no second request — it rode in on the row)
+  │
+  └─► operator clicks Helpful ───────► POST /feedback
+         │
+         └─ onRated()
+              └─ mutate("rl-stats") ──────► arm mean reward moves
+```
+
+Three behaviours worth naming. The rationale panel issues **no request** — the whole
+object ships inside the transaction row, which is what makes the explanation a record of
+what happened rather than a reconstruction of it. `StatusPill` polls on its own clock, so
+dependency failures surface without an operator having to ask a question first. And the
+console never renders an answer from the `POST /query` response; it revalidates and reads
+the row back, so what the operator rates is what was actually persisted.
+
+Client-side guards mirror the server's: `QueryBox` blocks concurrent submits while a
+request is in flight, and `FeedbackButtons` latches after one rating — the server enforces
+the same with a `409`. A `503` is translated to *"No retrieval path is available right
+now — check /health"* rather than shown raw.
+
+### The rest of the HTTP surface
+
+`POST /query` and `POST /feedback` are documented under [API](#api). The remainder:
+
+<details>
+<summary><code>GET /transactions?limit=n</code> · <code>GET /rl/stats?limit=n</code></summary>
+
+```jsonc
+// GET /transactions?limit=25   — limit 1..200, default 25, newest first
+{ "transactions": [ { "id": "b1f0…", "query": "…", "answer": "…",
+                      "path": "vectorless", "model": "llama3.2:3b",
+                      "triage_class": "simple_lookup", "latency_ms": 940,
+                      "grounded": true, "overlap_score": 0.62,
+                      "confidence_band": "High", "hallucination_penalty": 0,
+                      "exploring": false, "degraded": false,
+                      "rationale": { /* … */ },
+                      "citations": [ /* … */ ],
+                      "created_at": "…",
+                      "feedback": { "score": 1, "reward": 8.06, "created_at": "…" } } ],
+  "count": 1 }
+
+// GET /rl/stats?limit=200      — limit 1..1000 (reward series length)
+{ "states": ["simple_lookup", "complex_diagnostic", "urgent_incident"],
+  "arms": [ { "state": "simple_lookup", "action": "vectorless|llama3.2:3b",
+              "path": "vectorless", "model": "llama3.2:3b",
+              "pulls": 13, "rated_pulls": 9, "mean_reward": 7.4,
+              "pull_share": 0.27, "last_updated": "…" } ],
+  "total_pulls": 48,
+  "series": [ /* reward over time */ ] }
+```
+
+`feedback` is `null` until rated — the unrated majority is visible rather than implied.
+`pulls` and `rated_pulls` are both exposed so the gap between "served" and "observed" is
+inspectable from outside.
+</details>
+
+<details>
+<summary><code>GET /health</code> · <code>GET /metrics</code> · <code>GET /</code></summary>
+
+```jsonc
+// GET /health  — 200 when ok or degraded, 503 only when down
+{ "status": "ok",                     // ok | degraded | down
+  "checks": {
+    "postgres":          { "name": "postgres", "status": "up" },
+    "vector_index":      { "name": "vector_index", "status": "up",
+                           "detail": "34 chunks indexed" },
+    "vectorless_index":  { "name": "vectorless_index", "status": "up",
+                           "detail": "20 records" },
+    "ollama_generation": { "name": "openrouter.generation", "status": "up",
+                           "latencyMs": 0 },
+    "ollama_embedding":  { "name": "llm.embedding", "status": "up", "latencyMs": 0 } },
+  "uptime_s": 236, "version": "1.0.0" }
+
+// GET /  — service descriptor
+{ "service": "mediaops-copilot-api", "version": "1.0.0", "routes": [ … ] }
+```
+
+Roll-up: any check `down` → `down`; any `degraded` → `degraded`; else `ok`. The check
+*keys* are stable while the `name` inside reflects the runtime that actually answered —
+`ollama_generation` reports `openrouter.generation` under `hybrid`, so a dashboard keyed
+on the outer name survives a provider switch.
+
+`GET /metrics` is Prometheus text exposition; the metric names are listed under
+[Observability](#observability).
+</details>
+
+**Error envelopes.** Every failure is JSON, never a bare string:
+
+```jsonc
+{ "error": "invalid_request", "details": [ { "field": "query", "message": "…" } ] }  // 400
+{ "error": "payload_too_large" }                                                    // 413
+{ "error": "not_found", "path": "/typo" }                                           // 404
+{ "error": "Unknown transaction" }                                                  // 404
+```
+
+**CORS** is `origin: *` limited to `GET`/`POST`/`OPTIONS` — a single-operator console with
+no cookies to protect. Tightening the origin is the first change a shared deployment
+needs.
+
+### Access control on the typed surface
+
+`/trpc/*` reads two headers into its context: `x-distinct-id` (caller identity, currently
+carried but unused) and `x-operator-key`.
+
+| Procedure | REST equivalent | Access |
+|---|---|---|
+| `query.ask` | `POST /query` | public |
+| `feedback.rate` | `POST /feedback` | public |
+| `health.check` | `GET /health` | public |
+| `transaction.list` | `GET /transactions` | **operator** |
+| `rl.stats` | `GET /rl/stats` | **operator** |
+
+`operatorProcedure` compares `x-operator-key` against `OPERATOR_KEY`. **When
+`OPERATOR_KEY` is unset the check is skipped entirely** — open by default so a clone runs
+with no configuration, gated the moment the variable exists.
+
+Two asymmetries to know before deploying this anywhere shared: the gate gets you
+`UNAUTHORIZED` on the tRPC procedures only — **the REST twins of both operator routes are
+ungated regardless** — and an unset `OPERATOR_KEY` is indistinguishable from a correctly
+configured open one. Queries are stored verbatim, so `/transactions` is the route that
+leaks incident detail. See [Security & safety](#security--safety).
+
+### Agent tools
+
+The ReAct loop's action space is a closed whitelist of two:
+
+| Tool | Mutating | Behaviour |
+|---|---|---|
+| `check_job_status(id)` | no | Reads the live job record |
+| `restart_render(id)` | **yes** | **Mock** — records intent, mutates nothing |
+
+Every call is persisted to `copilot.tool_invocation` with a `simulated` flag, so the audit
+trail distinguishes *the agent read something* from *the agent wanted to change
+something*. That column is the seam where a real control-plane call would land, and the
+place a human-confirmation step would be enforced.
+
+### Retrieval order on the deterministic path
+
+Vectorless is two retrievers behind one interface, tried in order:
+
+1. **Exact anchor hits** — the job record and the glossary entry for each resolved
+   anchor. If a job has a `failure_reason`, the matching glossary entry is pulled in
+   too, so `why did job 482 fail` resolves the record *and* follows the failure into the
+   glossary in one hop, with no model call and no similarity search.
+2. **BM25**, only when no anchor resolved, subject to both floors described above.
+
+The ordering is the point: an exact hit is not scored against a floor, because a primary
+key match has no similarity to be uncertain about.
+
+### What lands in Postgres
+
+`platform.*` is reference data, re-seeded from repo fixtures on every boot and safe to
+truncate. `copilot.*` is learned state that is never rebuilt.
+
+| Table | Key | Columns |
+|---|---|---|
+| `platform.job` | `id` | `status`, `failure_reason`, `worker`, `duration_s`, `queued_at`, `job_class`, `priority`, `submitter` |
+| `platform.error_code` | `code` | `meaning`, `severity`, `remediation` |
+| `copilot.transaction` | `id` (uuid) | `query`, `answer`, `path`, `model`, `triage_class`, `latency_ms`, `grounded`, `overlap_score`, `confidence_band`, `hallucination_penalty`, `exploring`, `degraded`, `rationale` jsonb, `created_at` |
+| `copilot.feedback` | `transaction_id` | `score`, `reward`, `created_at` |
+| `copilot.bandit_arm` | `(state, action)` | `pulls`, `rated_pulls`, `mean_reward`, `last_updated` |
+| `copilot.citation` | `(transaction_id, evidence_id)` | `source`, `score`, `excerpt` |
+| `copilot.tool_invocation` | `id` | `transaction_id`, `tool`, `args` jsonb, `simulated`, `created_at` |
+
+Two schema choices carry behaviour rather than describing it. `feedback` is keyed by
+`transaction_id` **alone** — one rating per answer is a primary key, not application
+logic, which is what makes the `409` unforgeable under concurrency. And `citation` is a
+real table rather than a jsonb blob on the transaction, so "which evidence has this
+system ever cited" is a query instead of a scan.
+
+`knex-stringcase` maps `camelCase` in code to `snake_case` in the database; the column
+names above are what a `psql` session shows.
 
 ## Observability
 
@@ -628,6 +876,13 @@ Stated plainly, because a system that claims to never guess should not guess abo
 
 - **Classifier accuracy is not evidence about production.** Templated data, learned
   vocabulary. The confusion matrix is the informative part.
+- **The golden set is labelled against the same fixtures the system serves.** It shows
+  routing, floors and the gate behaving as designed on known data — not how they behave on
+  real operator traffic. The 12 abstention cases transfer best, because "should refuse" is
+  a property of the corpus rather than of phrasing.
+- **The similarity floor under-refuses domain-shaped nonsense.** Measured, not suspected:
+  all three of the router's false answers come through the vector path on queries that
+  share vocabulary with the corpus but have no answer in it.
 - **RL convergence needs tens of ratings per state.** A short demo shows the mechanism
   working, not a converged policy.
 - **Lexical overlap penalises legitimate paraphrase.** It fails safe — a good answer can
@@ -657,6 +912,8 @@ apps/
       otel/                     sdk · bootstrap · middleware · metrics · spans · logBridge
       utils/                    logger · metrics · stopwords · circuitBreaker
       scripts/                  generateDataset
+      eval/                     goldenSet · strategies · harness · metrics ·
+                                report · adversarialLlm · run
       modules/
         platform/               job · errorCode · seed  + data/ (fixtures, mockDocs)
         query/                  router · schema · services/pipeline
@@ -676,7 +933,8 @@ apps/
     components/                 QueryBox · TransactionTable · TransactionRow ·
                                 RationalePanel · FeedbackButtons · RLPanel · StatusPill
 ml/                             train_triage_classifier.py · train_fallback.mjs ·
-                                synthetic_dataset.csv · metrics_report.md
+                                synthetic_dataset.csv · metrics_report.md ·
+                                eval_report.md (generated by `npm run eval`)
 requirements.txt                every prerequisite, pip-installable
 otel-collector.yaml             OTLP collector config (compose profile: telemetry)
 .github/workflows/ci.yml        lint → test → ml → docker build → gated deploy

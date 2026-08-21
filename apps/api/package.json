@@ -16,7 +16,8 @@
     "migrate": "knex --knexfile knexfile.js migrate:latest",
     "migrate:rollback": "knex --knexfile knexfile.js migrate:rollback",
     "migrate:make": "knex --knexfile knexfile.js migrate:make",
-    "ml:dataset": "tsx src/scripts/generateDataset.ts"
+    "ml:dataset": "tsx src/scripts/generateDataset.ts",
+    "eval": "tsx src/eval/run.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

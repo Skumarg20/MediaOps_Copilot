@@ -23,7 +23,8 @@
     "migrate:rollback": "npm run migrate:rollback --workspace=apps/api",
     "ml:dataset": "npm run ml:dataset --workspace=apps/api",
     "ml:train": "node ml/train_fallback.mjs",
-    "ml:train:python": "python ml/train_triage_classifier.py"
+    "ml:train:python": "python ml/train_triage_classifier.py",
+    "eval": "npm run eval --workspace=apps/api"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
