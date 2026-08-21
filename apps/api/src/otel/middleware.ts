@@ -13,14 +13,6 @@ import { config } from '@/config.js';
 import { createHttpServerMetrics, observeHttpServerMetrics } from './metrics.js';
 import { setSpanWithError } from './utils.js';
 
-/**
- * Opens one SERVER span per request and closes it with the outcome.
- *
- * An inbound `traceparent` is honoured, so a request that arrives from the
- * console or a gateway continues that trace rather than starting an orphan.
- * Without a registered SDK every call here resolves to the OpenTelemetry API's
- * no-op implementation, which is why this can be mounted unconditionally.
- */
 export function otelMiddleware(): MiddlewareHandler {
 	const tracer = trace.getTracer(config.otel.serviceName, config.otel.serviceVersion);
 	const meter = metrics.getMeter(config.otel.serviceName, config.otel.serviceVersion);

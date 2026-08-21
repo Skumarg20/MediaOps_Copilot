@@ -31,17 +31,6 @@ function toStats(row: ArmRow): ArmStats {
 	};
 }
 
-/**
- * Epsilon-greedy contextual bandit.
- *
- *   state  = triage class (3)
- *   action = (retrieval_path, model) (4, masked to 2 when a path is pinned)
- *   update = incremental sample mean, Q <- Q + (R - Q)/N
- *
- * Arm statistics are written through to Postgres on every update, so learning
- * survives a restart — which is what makes "it improved over the session" an
- * observable property rather than a claim.
- */
 export class EpsilonGreedyBandit implements Policy {
 	private readonly random: () => number;
 	private readonly trx: Knex;
@@ -51,11 +40,6 @@ export class EpsilonGreedyBandit implements Policy {
 		this.trx = opts.trx ?? db;
 	}
 
-	/**
-	 * Optimistic initialisation (Q0 = 5.0) guarantees every arm is tried before
-	 * any is abandoned, without a separate warm-up mode: an untried arm looks
-	 * better than a merely-average one until it proves otherwise.
-	 */
 	async init(): Promise<void> {
 		const rows = TRIAGE_CLASSES.flatMap((state) =>
 			allActions().map((action) => ({
@@ -75,22 +59,10 @@ export class EpsilonGreedyBandit implements Policy {
 		}
 	}
 
-	/**
-	 * The same policy, reading and writing through `trx`.
-	 *
-	 * Arm statistics live in Postgres precisely so learning survives a restart;
-	 * that only holds if a rating and the update it causes land together. This is
-	 * what lets the caller put both inside one transaction.
-	 */
 	withTransaction(trx: Knex): EpsilonGreedyBandit {
 		return new EpsilonGreedyBandit({ ...this.opts, trx });
 	}
 
-	/**
-	 * `lock` takes a row lock for the read-modify-write in `update()`. Two ratings
-	 * for the same arm arriving together would otherwise both read the old mean
-	 * and the second write would silently discard the first.
-	 */
 	private async row(state: TriageClass, key: string, lock = false): Promise<ArmStats> {
 		const query = this.trx('copilot.banditArm').where({ state, action: key });
 		const found = (await (lock ? query.forUpdate() : query).first()) as ArmRow | undefined;
@@ -159,11 +131,6 @@ export class EpsilonGreedyBandit implements Policy {
 		};
 	}
 
-	/**
-	 * Provisional phase: the arm was pulled, the reward has not arrived. The pull
-	 * count moves so exploration accounting stays honest; Q does not, so silence
-	 * is read as neither approval nor disapproval.
-	 */
 	async registerPull(state: TriageClass, action: Action): Promise<ArmStats> {
 		const key = actionKey(action);
 		await this.row(state, key);
@@ -183,20 +150,6 @@ export class EpsilonGreedyBandit implements Policy {
 		return stats;
 	}
 
-	/**
-	 * Terminal phase: fold the realised reward into the running mean.
-	 * Q(s,a) <- Q(s,a) + (1/N)*(R - Q(s,a))
-	 *
-	 * N counts *rated* pulls, not pulls. Dividing by every pull the arm served
-	 * would let the unrated majority dilute each real observation — an arm pulled
-	 * twenty times and rated once would move by (R − Q)/20 and stay pinned near
-	 * the optimistic prior, which keeps it looking best and keeps it being chosen.
-	 * `pulls` still drives epsilon decay and exploration accounting, where every
-	 * pull genuinely counts.
-	 *
-	 * The first rated sample replaces the prior outright rather than averaging
-	 * against a number nobody observed.
-	 */
 	async update(state: TriageClass, action: Action, reward: number): Promise<ArmStats> {
 		const key = actionKey(action);
 		const current = await this.row(state, key, true);

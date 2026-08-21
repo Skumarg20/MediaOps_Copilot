@@ -31,12 +31,6 @@ export function toCitations(evidence: Evidence[], ids: string[]): Citation[] {
 }
 
 
-/**
- * Explains every decision that would change what the operator *does* with the
- * answer, and keeps internal everything that would only change what an engineer
- * does with the system. Nothing here is reconstructed post-hoc and no second
- * model call is involved — these are the decisions as they were recorded.
- */
 export function composeRationale(input: {
   path: RetrievalPath;
   pin: PinDecision;

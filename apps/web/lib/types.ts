@@ -1,12 +1,3 @@
-/**
- * Mirrors the API's response contract.
- *
- * The console holds no business logic — it renders what the API decided — so
- * these types are a *transcription* of the server contract, not a second
- * definition of it. The API suite has a contract test asserting the rationale
- * object it emits matches exactly these keys, because this is the seam most
- * likely to rot.
- */
 
 export type RetrievalPath = 'vector' | 'vectorless';
 export type ModelArm = 'llama3.2:3b' | 'qwen2.5:3b';
@@ -68,7 +59,6 @@ export type TransactionRecord = {
   feedback: { score: number; reward: number; created_at: string } | null;
 };
 
-/** Binary rating fixed by the interface contract: 1 = helpful, 0 = unhelpful. */
 export type FeedbackScore = 0 | 1;
 
 export type FeedbackResponse = {

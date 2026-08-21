@@ -10,15 +10,6 @@ const knexStringcase = ((knexStringcaseModule as unknown as { default?: Stringca
 const here = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(here, '../../migrations');
 
-/**
- * Integration suites run against a real Postgres, not a stand-in.
- *
- * The bandit's correctness depends on `on conflict`, `returning`, and atomic
- * increments; the store depends on jsonb round-tripping. A fake would agree with
- * whatever the code does and prove none of it. The cost is that these suites
- * need a database — which is why they skip with a clear message instead of
- * failing when one is not configured.
- */
 export const TEST_DB_CONFIG = {
 	client: process.env.DB_CLIENT ?? 'pg',
 	host: process.env.DB_HOST ?? 'localhost',
@@ -30,7 +21,6 @@ export const TEST_DB_CONFIG = {
 
 let cached: { available: boolean } | null = null;
 
-/** Probed once per process, so a missing database costs one connect attempt. */
 export async function isPostgresAvailable(): Promise<boolean> {
 	if (cached) return cached.available;
 
@@ -55,10 +45,6 @@ export async function isPostgresAvailable(): Promise<boolean> {
 		await probe.destroy();
 	}
 
-	// Skipping is right locally and wrong in CI: a green run that silently tested
-	// none of the database-backed behaviour is worse than a red one. CI sets this
-	// flag, so a missing service fails loudly at the first suite instead of
-	// hiding in a skip count nobody reads.
 	if (!cached.available && process.env.REQUIRE_POSTGRES === 'true') {
 		throw new Error(`REQUIRE_POSTGRES is set but ${skipReason()}`);
 	}
@@ -84,19 +70,6 @@ const TABLES = [
 	'platform.error_code'
 ];
 
-/**
- * Applies the real migrations, then truncates every table.
- *
- * An earlier version of this helper created suffixed scratch schemas and aliased
- * them with `search_path`. That silently could not work: the application
- * addresses tables as `copilot.transaction`, and a schema-qualified name ignores
- * `search_path` entirely. Suites are serial (`fileParallelism: false`), so
- * truncating shared schemas gives the same isolation without the illusion.
- *
- * Running `migrate.latest` rather than re-declaring the DDL here means the
- * suites exercise the migrations themselves — the helper cannot drift from what
- * production actually creates.
- */
 export async function createTestDb(_namespace: string): Promise<Knex> {
 	const connection = knex({
 		client: TEST_DB_CONFIG.client,
@@ -108,8 +81,6 @@ export async function createTestDb(_namespace: string): Promise<Knex> {
 			database: TEST_DB_CONFIG.database
 		},
 		pool: { min: 1, max: 2 },
-		// Mirrors knexfile.js: the `copilot` schema shares its name with the DB
-		// user, so an unpinned search path sends unqualified references there.
 		searchPath: ['public'],
 		migrations: {
 			directory: MIGRATIONS_DIR,
@@ -121,12 +92,6 @@ export async function createTestDb(_namespace: string): Promise<Knex> {
 		...knexStringcase()
 	});
 
-	// Rebuild from nothing rather than migrating onto whatever a previous run
-	// left behind. A test database that has drifted — tables present but
-	// unrecorded in `knex_migrations`, say, after an interrupted run — makes
-	// `migrate.latest()` fail on "already exists", and the failure surfaces as a
-	// skipped suite rather than a clear error. Dropping first removes the whole
-	// class of problem, and costs a second.
 	await connection.raw('drop schema if exists copilot cascade');
 	await connection.raw('drop schema if exists platform cascade');
 	await connection.raw('drop table if exists knex_migrations, knex_migrations_lock');
@@ -136,9 +101,7 @@ export async function createTestDb(_namespace: string): Promise<Knex> {
 	return connection;
 }
 
-/** Wipes both schemas so a suite never inherits another's rows. */
 export async function truncateAll(connection: Knex): Promise<void> {
-	// One statement, so foreign keys never observe a half-empty state.
 	await connection.raw(`truncate table ${TABLES.join(', ')} restart identity cascade`);
 }
 

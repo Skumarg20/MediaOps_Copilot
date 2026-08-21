@@ -26,20 +26,24 @@ Full list, including model weights and ports: [`requirements.txt`](./requirement
 ## 1. Fastest path - Docker (everything included)
 
 ```bash
-git clone <repo-url> && cd netZhero
+git clone <repo-url> && cd MediaOps_Copilot
 
 # Optional but recommended: hosted generation, ~270 MB of local downloads
 # instead of ~4.2 GB. Get a key at https://openrouter.ai/keys
 echo "OPENROUTER_API_KEY=sk-or-..." > .env
 
-docker compose up --build
-
-# Embeddings always run locally (~270 MB)
+# Pull the embedding model BEFORE the API starts. The vector index is built
+# once at boot, so a model pulled afterwards leaves the vector path disabled
+# until the API restarts.
+docker compose up -d ollama
 docker compose exec ollama ollama pull nomic-embed-text
 
 # Only for LLM_PROVIDER=ollama, or as a hosted-outage fallback (~3.9 GB)
 docker compose exec ollama ollama pull llama3.2:3b
 docker compose exec ollama ollama pull qwen2.5:3b
+
+# Now everything else
+docker compose up --build
 ```
 
 - **Console** -> http://localhost:3000 (set `WEB_PORT=3001` if 3000 is taken)
@@ -47,6 +51,37 @@ docker compose exec ollama ollama pull qwen2.5:3b
 
 Migrations run automatically from the API container's entrypoint, retrying while
 Postgres comes up.
+
+**On Windows PowerShell**, use this instead of `echo ... > .env`. PowerShell's `>` is
+`Out-File`, which encodes text rather than writing raw bytes — Windows PowerShell 5.1
+defaults it to UTF-16 LE. Compose then fails outright with
+`unexpected character in variable name`, and other shells may leave a UTF-8 BOM that
+makes the key silently never apply:
+
+```powershell
+[IO.File]::WriteAllText("$PWD\.env", "OPENROUTER_API_KEY=sk-or-...`n")
+```
+
+Verify before starting anything — the first bytes must be `4F 50 45 4E` (`OPEN`), not
+`FF FE` or `EF BB BF`:
+
+```powershell
+Format-Hex .env | Select-Object -First 1
+```
+
+**Already started it in the wrong order?** Pull the model, then restart so the API
+re-indexes. Environment changes need a recreate, not a restart:
+
+```bash
+docker compose exec ollama ollama pull nomic-embed-text
+docker compose up -d --force-recreate api
+```
+
+Check it worked — `vector_index` should report chunks indexed, not `0`:
+
+```bash
+curl http://localhost:8080/health
+```
 
 ## 2. Local development
 

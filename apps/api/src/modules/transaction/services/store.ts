@@ -181,11 +181,6 @@ export interface FeedbackWrite {
 	reward: number;
 }
 
-/**
- * Returns false when the transaction was already rated. The primary key on
- * `transaction_id` is what makes duplicate feedback a 409 rather than a second
- * policy update — a button that can be double-clicked must not double-count.
- */
 export async function insertFeedback(feedback: FeedbackWrite, trx: Knex = db): Promise<boolean> {
 	const inserted = await trx('copilot.feedback')
 		.insert({
@@ -214,14 +209,6 @@ export interface RewardPoint {
 	createdAt: string;
 }
 
-/**
- * Reward time series for the console chart, oldest first.
- *
- * The newest `limit` ratings are taken and then reversed for display. Ordering
- * ascending before the limit would pin the chart to the first ratings ever
- * recorded, so it would stop moving the moment the table passed `limit` rows.
- * A trend view that quietly freezes is worse than no trend view.
- */
 export async function getRewardSeries({ limit }: { limit: number }, trx: Knex = db): Promise<RewardPoint[]> {
 	const rows = (await trx('copilot.feedback as f')
 		.join('copilot.transaction as t', 't.id', 'f.transaction_id')

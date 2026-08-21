@@ -16,12 +16,6 @@ const TRIAGE_LABEL: Record<string, string> = {
   urgent_incident: 'incident',
 };
 
-/**
- * One transaction in the feed.
- *
- * Ungrounded answers get a distinct amber treatment so an abstention reads as
- * deliberate honesty, not as an error the operator should chase.
- */
 export function TransactionRow({ transaction: tx, onRated }: Props) {
   const [expanded, setExpanded] = useState(false);
 

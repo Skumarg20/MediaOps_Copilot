@@ -10,12 +10,6 @@ import { swrKeys } from '@/lib/api-client';
 
 const LIMIT = 25;
 
-/**
- * The console holds no business logic — it renders what the API decided.
- * Its only job beyond presentation is keeping the two views consistent: a
- * feedback click must visibly move both the row and the policy panel, or the
- * loop is invisible to the operator.
- */
 export default function ConsolePage() {
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const { mutate } = useSWRConfig();

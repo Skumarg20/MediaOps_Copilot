@@ -30,12 +30,6 @@ const BAND_STYLE: Record<string, string> = {
   Low: 'border-signal-bad/50 bg-signal-bad/10 text-signal-bad',
 };
 
-/**
- * Explains every decision that would change what the operator *does* with the
- * answer — path, arm, confidence, triage — and leaves the tuning internal.
- * Nothing here is recomputed: these strings are the decisions as the API
- * recorded them.
- */
 export function RationalePanel({ rationale, citations, overlapScore }: Props) {
   return (
     <div className="border-t border-ink-700 bg-ink-950/60 px-4 py-3">

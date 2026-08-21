@@ -11,10 +11,6 @@ const TONE = {
   unknown: 'border-ink-600 text-ink-400',
 } as const;
 
-/**
- * Names the dependency that is down, not just the fact that something is —
- * the same information the 3am on-call needs before opening anything else.
- */
 export function StatusPill() {
   const { data, error } = useSWR<HealthResponse>(swrKeys.health, fetchHealth, {
     refreshInterval: 8000,

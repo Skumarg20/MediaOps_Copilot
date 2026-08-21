@@ -9,7 +9,6 @@ const REQUEST: GenerateRequest = {
 	prompt: 'QUESTION:\nwhy\n\nEVIDENCE:\n[job:482]\nJob 482 failed on worker-07.'
 };
 
-/** Records which adapter served the call, so fallback order is observable. */
 function labelled(label: string, opts: { down?: boolean } = {}): LlmAdapter & { calls: number } {
 	const inner = new FakeLlmAdapter(opts.down ? { generationDown: true } : {});
 	const adapter = {
@@ -43,7 +42,6 @@ describe('hybrid llm adapter', () => {
 
 		const result = await new HybridLlmAdapter(primary, fallback, fallback).generate(REQUEST);
 
-		// A hosted outage must cost a retry, not the whole answer.
 		expect(result.text.startsWith('local:')).toBe(true);
 		expect(fallback.calls).toBe(1);
 	});
@@ -67,8 +65,6 @@ describe('hybrid llm adapter', () => {
 	});
 
 	it('always embeds with the embedding runtime, never the generation one', async () => {
-		// The whole point of the split: OpenRouter serves no embeddings, so the
-		// vector path must never be routed at it.
 		const generation = labelled('hosted', { down: true });
 		const embedder = labelled('local');
 
@@ -79,8 +75,6 @@ describe('hybrid llm adapter', () => {
 	});
 
 	it('offers an arm that either runtime can serve', async () => {
-		// A slug missing from the hosted catalogue should fall through to local
-		// rather than masking the arm out of the bandit's action space.
 		const primary = labelled('hosted', { down: true });
 		const fallback = labelled('local');
 
@@ -96,8 +90,6 @@ describe('hybrid llm adapter', () => {
 
 		const health = await new HybridLlmAdapter(primary, fallback, fallback).health();
 
-		// A degraded hosted provider is not a degraded system when generation
-		// still works — the pill should say so.
 		expect(health.generation.status).toBe('up');
 		expect(health.generation.detail).toMatch(/hosted provider degraded/i);
 		expect(health.embedding.status).toBe('up');

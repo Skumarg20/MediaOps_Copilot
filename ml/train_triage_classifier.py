@@ -177,9 +177,6 @@ def main() -> None:
     X_train_z = scaler.fit_transform(X_train)
     X_test_z = scaler.transform(X_test)
 
-    # `multi_class` is deliberately absent: scikit-learn deprecated it in 1.5 and
-    # removed it in 1.7. With `lbfgs` and three classes the fit is multinomial
-    # anyway, so dropping the argument keeps the behaviour and works on both.
     clf = LogisticRegression(
         solver="lbfgs",
         max_iter=2000,
@@ -196,8 +193,6 @@ def main() -> None:
     )
     cm = confusion_matrix(y_test, y_pred, labels=list(range(len(labels))))
 
-    # A constant column has zero variance; guard the divide rather than drop the
-    # column, so the exported vector shape stays the compiled contract.
     stds = np.where(scaler.scale_ < 1e-9, 1.0, scaler.scale_)
 
     model = {

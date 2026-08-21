@@ -11,14 +11,6 @@ export interface HealthReport {
 	version: string;
 }
 
-/**
- * Real dependency probes, not a hardcoded 200.
- *
- * Postgres down is fatal — nothing can be recorded or learned, so serving would
- * be dishonest. Everything else is degraded and still returns 200, so a load
- * balancer sheds only genuinely dead instances while a degraded one keeps
- * serving vectorless answers.
- */
 export async function checkHealth(): Promise<HealthReport> {
 	const ctx = getContext();
 	const checks: Record<string, DependencyStatus> = {};

@@ -24,21 +24,11 @@ const WORKERS = ['worker-02', 'worker-03', 'worker-07', 'worker-09', 'worker-11'
 type Template = {
   render: (slots: Slots) => string;
   label: TriageClass;
-  /** Slots the template consumes, so the generator knows what to vary. */
   uses: Array<'job' | 'code' | 'worker'>;
 };
 
 type Slots = { job: string; code: string; worker: string };
 
-/**
- * Natural phrasing variation, per class. Without these, a slot-free template
- * emits the same row on every repeat and the dataset collapses to a handful of
- * distinct queries — plenty of rows, no variance for the model to learn from.
- *
- * Wrappers stay inside their class's register: none of the neutral ones smuggle
- * urgency vocabulary into a non-urgent label, which would poison the very
- * feature that separates `urgent_incident`.
- */
 const WRAPPERS: Record<TriageClass, Array<(q: string) => string>> = {
   simple_lookup: [
     (q) => q,
@@ -187,7 +177,6 @@ const TEMPLATES: Template[] = [
   },
 ];
 
-/** Deterministic PRNG so a regenerated dataset is byte-identical. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -198,10 +187,6 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/**
- * Mirrors the runtime lookup: how many seeded jobs share a failure reason named
- * in the query. Computed from the same fixture the API seeds from.
- */
 type JobFixture = { failure_reason: string | null; status: string };
 const jobs = JSON.parse(
   fs.readFileSync(path.resolve(here, '../modules/platform/data/jobs.json'), 'utf8'),

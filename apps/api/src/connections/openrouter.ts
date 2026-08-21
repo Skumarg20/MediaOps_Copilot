@@ -9,14 +9,6 @@ export const openrouterProvider = createOpenRouter({
 	apiKey: process.env.OPENROUTER_API_KEY ?? ''
 });
 
-/**
- * Hosted generation over the same `LlmAdapter` seam the local runtime uses.
- *
- * The bandit's arm keys are the *logical* model names (`llama3.2:3b`), never the
- * provider's slug. That is deliberate: arm statistics are keyed by action string
- * in Postgres, so routing them through a stable logical name means switching
- * provider — or model slug — does not orphan everything the policy has learned.
- */
 export class OpenRouterAdapter implements LlmAdapter {
 	private readonly breaker = new CircuitBreaker(
 		'openrouter.generate',
@@ -65,18 +57,6 @@ export class OpenRouterAdapter implements LlmAdapter {
 		throw new LlmUnavailableError('openrouter does not provide embeddings; pair it with a local embedder');
 	}
 
-	/**
-	 * Probes the catalogue so a mistyped or retired model slug shows up as a
-	 * masked arm — the bandit simply stops selecting it — instead of surfacing as
-	 * a runtime failure on every query that happens to draw it.
-	 *
-	 * Stale-while-revalidate, because the caller is the request path and the
-	 * measured latency of a request becomes the latency term of that arm's
-	 * reward. A blocking refresh would charge one query per TTL for a network
-	 * round trip that has nothing to do with the arm it was routed to, quietly
-	 * adding noise to the very signal the policy learns from. A cached answer is
-	 * returned immediately and the refresh happens behind it.
-	 */
 	async availableModels(): Promise<Set<string>> {
 		const isFresh = this.modelsCache !== null && Date.now() - this.modelsCache.at < config.ollama.probeTtlMs;
 
@@ -90,10 +70,6 @@ export class OpenRouterAdapter implements LlmAdapter {
 		return this.toArmNames(await this.refreshCatalogue());
 	}
 
-	/**
-	 * One refresh in flight at a time: a burst of concurrent queries past the TTL
-	 * would otherwise each open their own connection to the catalogue.
-	 */
 	private refreshCatalogue(): Promise<Set<string>> {
 		if (this.catalogueRefresh) return this.catalogueRefresh;
 

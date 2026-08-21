@@ -39,8 +39,6 @@ describe('RationalePanel', () => {
   it('renders the path, arm and confidence decisions with their reasons', () => {
     render(<RationalePanel rationale={RATIONALE} citations={CITATIONS} overlapScore={0.62} />);
 
-    // "vectorless" is both the path value and the citation's source badge, so
-    // assert on the labelled row rather than the bare string.
     expect(screen.getByText('Path').parentElement).toHaveTextContent('vectorless');
     expect(screen.getByText('qwen2.5:3b')).toBeInTheDocument();
     expect(screen.getByText('Confidence').parentElement).toHaveTextContent('High');

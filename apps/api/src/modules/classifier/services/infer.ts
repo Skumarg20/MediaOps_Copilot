@@ -55,11 +55,6 @@ function softmax(logits: number[]): number[] {
   return exps.map((e) => e / sum);
 }
 
-/**
- * Serving is a standardise -> dot product -> softmax, which is the entire reason
- * multinomial logistic regression was chosen: the same twenty lines that produce
- * the class also produce an honest per-feature attribution.
- */
 export class LogisticTriageClassifier implements Classifier {
   constructor(private readonly m: TriageModel = model) {}
 

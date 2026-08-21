@@ -1,10 +1,5 @@
 import type { Config } from 'tailwindcss';
 
-/**
- * A deliberately small palette. The console has exactly three states worth
- * colour — grounded, cautioned, abstained — and spending colour anywhere else
- * would make those three harder to spot during an incident.
- */
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   theme: {

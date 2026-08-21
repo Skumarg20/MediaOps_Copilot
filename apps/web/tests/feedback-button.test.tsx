@@ -44,7 +44,6 @@ describe('FeedbackButtons', () => {
 
     await userEvent.click(helpful);
 
-    // A double-clicked button must not be able to double-count.
     await waitFor(() => expect(helpful).toBeDisabled());
     expect(helpful).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Mark answer unhelpful' })).toBeDisabled();
@@ -61,7 +60,6 @@ describe('FeedbackButtons', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(/could not record feedback/i),
     );
-    // The optimistic state must be reverted: the policy never got this rating.
     expect(helpful).toHaveAttribute('aria-pressed', 'false');
     expect(helpful).not.toBeDisabled();
   });
@@ -86,8 +84,6 @@ describe('FeedbackButtons', () => {
   });
 
   it('renders a legacy -1 rating as unhelpful rather than as unrated', () => {
-    // Rows written before the binary contract was fixed store -1. Showing them
-    // as unrated would invite a second click the API would then reject.
     render(<FeedbackButtons transactionId="tx-6" existingScore={-1} />);
 
     const unhelpful = screen.getByRole('button', { name: 'Mark answer unhelpful' });

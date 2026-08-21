@@ -10,13 +10,8 @@ const { actionKey, allActions, computeReward, hallucinationPenaltyFor, maskActio
 const VECTORLESS_LLAMA: Action = { path: 'vectorless', model: 'llama3.2:3b' };
 const VECTOR_QWEN: Action = { path: 'vector', model: 'qwen2.5:3b' };
 
-// --------------------------------------------------------------------------
-// Pure arithmetic — no database, so these always run.
-// --------------------------------------------------------------------------
-
 describe('reward function', () => {
 	it('weights helpfulness an order of magnitude above latency', () => {
-		// A helpful answer that took 2s must still beat an unhelpful instant one.
 		const helpfulSlow = computeReward({ feedback: 1, latencyMs: 2000, hallucinationPenalty: 0 });
 		const unhelpfulFast = computeReward({ feedback: 0, latencyMs: 10, hallucinationPenalty: 0 });
 
@@ -26,7 +21,6 @@ describe('reward function', () => {
 	});
 
 	it('implements the reward formula the interface specifies', () => {
-		// Reward = (User Feedback Score × 10) − (Latency in seconds) − (Hallucination Penalty)
 		expect(computeReward({ feedback: 1, latencyMs: 1500, hallucinationPenalty: 0 })).toBeCloseTo(8.5, 4);
 		expect(computeReward({ feedback: 0, latencyMs: 1500, hallucinationPenalty: 0 })).toBeCloseTo(-1.5, 4);
 		expect(computeReward({ feedback: 1, latencyMs: 1000, hallucinationPenalty: 5 })).toBeCloseTo(4, 4);
@@ -37,7 +31,6 @@ describe('reward function', () => {
 		const slow = computeReward({ feedback: 1, latencyMs: 1400, hallucinationPenalty: 0 });
 
 		expect(fast).toBeGreaterThan(slow);
-		// The gap is small relative to the feedback term — a preference, not an override.
 		expect(fast - slow).toBeCloseTo(0.5, 4);
 	});
 
@@ -80,8 +73,6 @@ describe('action masking', () => {
 	});
 
 	it('falls back to the full model set when nothing is reported healthy', () => {
-		// An empty availability list means "we could not tell", not "none work" —
-		// masking to zero arms would turn an unknown into an outage.
 		expect(maskActions({ pinnedPath: null, availableModels: [] })).toHaveLength(4);
 	});
 
@@ -89,11 +80,6 @@ describe('action masking', () => {
 		expect(rlService.parseActionKey(actionKey(VECTOR_QWEN))).toEqual(VECTOR_QWEN);
 	});
 });
-
-// --------------------------------------------------------------------------
-// Policy behaviour — exercised against real Postgres, because correctness here
-// depends on `on conflict`, `returning`, and atomic increments.
-// --------------------------------------------------------------------------
 
 const hasPostgres = await isPostgresAvailable();
 
@@ -110,7 +96,6 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 	});
 
 	async function freshBandit(opts: { epsilon?: number; random?: () => number } = {}) {
-		// Each test starts from an empty table so pull counts never leak between them.
 		await db('copilot.banditArm').del();
 		const bandit = new EpsilonGreedyBandit({
 			...(opts.epsilon !== undefined ? { epsilonOverride: opts.epsilon } : {}),
@@ -148,12 +133,11 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			const before = (await bandit.snapshot()).find(
 				(arm) => arm.state === state && arm.action === actionKey(VECTOR_QWEN)
 			);
-			expect(before?.meanReward).toBe(5); // Q₀
+			expect(before?.meanReward).toBe(5);
 
 			await bandit.registerPull(state, VECTOR_QWEN);
 			const after = await bandit.update(state, VECTOR_QWEN, -3);
 
-			// Averaging against a prior nobody observed would leave this at +1.
 			expect(after.meanReward).toBeCloseTo(-3, 4);
 		});
 
@@ -161,13 +145,12 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			const bandit = await freshBandit({ epsilon: 0 });
 			const state: TriageClass = 'urgent_incident';
 
-			await bandit.registerPull(state, VECTORLESS_LLAMA); // never rated — silence
+			await bandit.registerPull(state, VECTORLESS_LLAMA);
 			const stats = (await bandit.snapshot()).find(
 				(arm) => arm.state === state && arm.action === actionKey(VECTORLESS_LLAMA)
 			);
 
 			expect(stats?.pulls).toBe(1);
-			// Silence must read as neither approval nor disapproval.
 			expect(stats?.meanReward).toBe(5);
 		});
 
@@ -175,13 +158,10 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			const bandit = await freshBandit({ epsilon: 0 });
 			const state: TriageClass = 'simple_lookup';
 
-			// Twenty served queries, nineteen of which nobody ever rates.
 			for (let i = 0; i < 20; i += 1) await bandit.registerPull(state, VECTOR_QWEN);
 
 			const rated = await bandit.update(state, VECTOR_QWEN, 8);
 
-			// Dividing by `pulls` would leave this at 5 + (8-5)/20 = 5.15, pinning the
-			// arm near its optimistic prior and keeping it permanently attractive.
 			expect(rated.pulls).toBe(20);
 			expect(rated.ratedPulls).toBe(1);
 			expect(rated.meanReward).toBeCloseTo(8, 4);
@@ -199,7 +179,6 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 
 			expect(second.pulls).toBe(6);
 			expect(second.ratedPulls).toBe(2);
-			// The mean of the two ratings that actually arrived, not of the six pulls.
 			expect(second.meanReward).toBeCloseTo(5, 4);
 		});
 	});
@@ -209,7 +188,6 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			const bandit = await freshBandit({ epsilon: 0, random: () => 0 });
 			const state: TriageClass = 'simple_lookup';
 
-			// Make one arm clearly best.
 			await bandit.registerPull(state, VECTOR_QWEN);
 			await bandit.update(state, VECTOR_QWEN, 9);
 
@@ -227,8 +205,6 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 		});
 
 		it('never reports exploring when only one arm is allowed', async () => {
-			// With a single option, "explore" and "exploit" are the same draw —
-			// calling it exploration would make the console's honesty marker a lie.
 			const bandit = await freshBandit({ epsilon: 1, random: () => 0 });
 			const decision = await bandit.select('simple_lookup', [VECTORLESS_LLAMA]);
 
@@ -303,7 +279,6 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			await first.registerPull('simple_lookup', VECTOR_QWEN);
 			await first.update('simple_lookup', VECTOR_QWEN, 7.5);
 
-			// A restart must not cost the session its learning.
 			const second = new EpsilonGreedyBandit({ epsilonOverride: 0, trx: db });
 			await second.init();
 

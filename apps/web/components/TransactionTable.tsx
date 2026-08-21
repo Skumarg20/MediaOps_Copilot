@@ -7,7 +7,6 @@ import type { TransactionRecord } from '@/lib/types';
 
 type Props = {
   limit?: number;
-  /** Rendered above the feed while a query is in flight. */
   pendingQuery?: string | null;
   onRated?: () => void;
 };

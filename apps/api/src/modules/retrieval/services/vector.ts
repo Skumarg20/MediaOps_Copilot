@@ -36,11 +36,6 @@ export function loadCorpus(docsDir: string = config.docsDir): Chunk[] {
   return chunks;
 }
 
-/**
- * In-process brute-force cosine over ~50 vectors. At this corpus size an ANN
- * index is pure ceremony; the `Retriever` interface is what keeps the swap to
- * pgvector/FAISS a one-file change rather than a redesign.
- */
 export class VectorRetriever implements Retriever {
   readonly name = 'vector' as const;
   private index: IndexedChunk[] = [];
@@ -55,10 +50,6 @@ export class VectorRetriever implements Retriever {
     return this.index.length;
   }
 
-  /**
-   * Boot-time indexing. Failure is non-fatal by design: the service starts
-   * degraded and serves vectorless answers rather than refusing to start.
-   */
   async build(): Promise<{ indexed: number; error?: string }> {
     const chunks = loadCorpus(this.docsDir);
     if (chunks.length === 0) {
@@ -85,10 +76,6 @@ export class VectorRetriever implements Retriever {
     }
   }
 
-  /**
-   * The similarity floor is the first line of hallucination defence: below it the
-   * path returns NO evidence rather than its best guess, and no model runs.
-   */
   async retrieve(query: string, ctx: QueryContext): Promise<Evidence[]> {
     if (this.index.length === 0) {
       retrievalHits.observe({ path: this.name }, 0);

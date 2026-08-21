@@ -58,7 +58,6 @@ export function recordDependency(name: string, status: 'up' | 'degraded' | 'down
   dependencyUp.set({ dependency: name }, status === 'up' ? 1 : status === 'degraded' ? 0.5 : 0);
 }
 
-/** Status class bucketing keeps cardinality flat (2xx/4xx/5xx). */
 export function statusClass(status: number): string {
   return `${Math.floor(status / 100)}xx`;
 }

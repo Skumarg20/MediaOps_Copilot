@@ -23,10 +23,6 @@ function ctxWith(anchors: QueryContext['anchors']): QueryContext {
 
 const NO_ANCHORS = { jobIds: [], errorCodes: [] };
 
-// --------------------------------------------------------------------------
-// Pure — no database.
-// --------------------------------------------------------------------------
-
 describe('chunker', () => {
 	it('produces heading-aware chunks with stable, citable ids', () => {
 		const chunks = chunkMarkdown(
@@ -37,7 +33,6 @@ describe('chunker', () => {
 		expect(chunks.length).toBeGreaterThanOrEqual(2);
 		expect(chunks[0]?.id).toBe('runbook-test#c0');
 		expect(chunks.every((chunk) => chunk.docId === 'runbook-test')).toBe(true);
-		// The heading rides along so an excerpt reads sensibly on its own.
 		expect(chunks.some((chunk) => chunk.heading === 'Section A' && chunk.text.includes('Section A'))).toBe(true);
 	});
 
@@ -64,7 +59,6 @@ describe('bm25', () => {
 		const index = new Bm25Index([{ id: 'a', text: 'render timeout budget exceeded', meta: {} }]);
 		const [hit] = index.search('render unicorn', 2);
 
-		// One of two content terms matched — the signal the coverage floor reads.
 		expect(hit?.coverage).toBeCloseTo(0.5, 4);
 	});
 
@@ -95,8 +89,6 @@ describe('vector path — where semantic retrieval genuinely wins', () => {
 
 		expect(evidence.length).toBeGreaterThan(0);
 		expect(evidence.length).toBeLessThanOrEqual(3);
-		// "slower than usual" appears nowhere in the corpus — this is exactly the
-		// case a keyword index cannot serve.
 		expect(evidence.some((item) => item.meta.docId === 'runbook-performance-degradation')).toBe(true);
 	});
 
@@ -104,7 +96,6 @@ describe('vector path — where semantic retrieval genuinely wins', () => {
 		const retriever = new VectorRetriever(new FakeLlmAdapter());
 		await retriever.build();
 
-		// Gate 1 of the grounding chain: below the floor, no evidence and no LLM call.
 		expect(await retriever.retrieve('zxqv plorbnat wibble frotz', ctxWith(NO_ANCHORS))).toHaveLength(0);
 	});
 
@@ -136,8 +127,6 @@ describe('hard routing rules', () => {
 	});
 
 	it('reports the exact match, not the outage, when both apply', () => {
-		// The query would have taken this path regardless of index health, so
-		// calling it a degradation would misinform the operator about the answer.
 		const pin = routingService.decidePin({
 			anchors: { jobIds: ['482'], errorCodes: [] },
 			vectorAvailable: false,
@@ -170,10 +159,6 @@ describe('hard routing rules', () => {
 	});
 });
 
-// --------------------------------------------------------------------------
-// Postgres-backed — the vectorless path and anchor resolution read real rows.
-// --------------------------------------------------------------------------
-
 const hasPostgres = await isPostgresAvailable();
 
 describe.skipIf(!hasPostgres)('vectorless path — where deterministic lookup genuinely wins', () => {
@@ -205,7 +190,6 @@ describe.skipIf(!hasPostgres)('vectorless path — where deterministic lookup ge
 		expect(evidence[0]?.meta.exact).toBe(true);
 		expect(evidence[0]?.text).toContain('exceeds the render time budget');
 
-		// The near-miss the vector path would risk: neighbours must not appear.
 		const ids = evidence.map((item) => item.id);
 		expect(ids).not.toContain('errorCode:RENDER_STALLED');
 		expect(ids).not.toContain('errorCode:UPLOAD_TIMEOUT');
@@ -225,7 +209,6 @@ describe.skipIf(!hasPostgres)('vectorless path — where deterministic lookup ge
 		const evidence = await retrieve('why did job 482 fail');
 		const code = evidence.find((item) => item.id === 'errorCode:RENDER_TIMEOUT');
 
-		// The fact anchors the answer; the glossary row explains the remedy.
 		expect(code).toBeDefined();
 		expect(code?.meta.viaJob).toBe('482');
 	});
@@ -242,9 +225,6 @@ describe.skipIf(!hasPostgres)('vectorless path — where deterministic lookup ge
 	});
 
 	it('abstains on an open-ended query it genuinely cannot serve', async () => {
-		// Safe but unhelpful — which is exactly why the vector path exists. One
-		// corpus-wide term ("render") clears the score floor; the coverage floor
-		// is what stops a plausible near-miss being served as an answer.
 		expect(await retrieve('why is my render slower than usual')).toHaveLength(0);
 	});
 
@@ -257,7 +237,6 @@ describe.skipIf(!hasPostgres)('vectorless path — where deterministic lookup ge
 		});
 
 		it('does not treat an arbitrary number as a job id', async () => {
-			// "1802 seconds" is a duration, not a key — pinning on it would be a guess.
 			const anchors = await routingService.extractAnchors({ query: 'the render took 1802 seconds' });
 			expect(anchors.jobIds).toEqual([]);
 		});

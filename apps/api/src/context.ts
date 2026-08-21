@@ -8,14 +8,6 @@ import { VectorRetriever, VectorlessRetriever } from '@/modules/retrieval/index.
 import { logEvent, logger } from '@/utils/index.js';
 import type { Classifier, Grounder, Policy } from '@/types.js';
 
-/**
- * The composition root.
- *
- * Modules reach for the pieces they need through `getContext()` rather than
- * receiving a services bag through every call signature — the same shape as the
- * platform's `connections/` singletons, and the reason a service function can be
- * called from a tRPC procedure, a REST handler, or a test without ceremony.
- */
 export interface AppContext {
 	llm: LlmAdapter;
 	vector: VectorRetriever;
@@ -31,20 +23,11 @@ let context: AppContext | null = null;
 export interface BuildContextOptions {
 	llm?: LlmAdapter;
 	bandit?: BanditOptions;
-	/** Skip boot-time embedding; tests that never touch the vector path save time. */
 	skipIndex?: boolean;
 	docsDir?: string;
-	/** Reference data is already present — used by tests that seed once per suite. */
 	skipSeed?: boolean;
 }
 
-/**
- * Builds the singleton context.
- *
- * A failed vector index is non-fatal: the service starts degraded and serves
- * vectorless answers rather than refusing to boot, because start-up order is not
- * a correctness dependency.
- */
 export async function buildContext(opts: BuildContextOptions = {}): Promise<AppContext> {
 	if (!opts.skipSeed) await platformService.seedReferenceData();
 
@@ -91,7 +74,6 @@ export function getContext(): AppContext {
 	return context;
 }
 
-/** Test seam: swap the whole context without going through boot. */
 export function setContext(next: AppContext | null): void {
 	context = next;
 }

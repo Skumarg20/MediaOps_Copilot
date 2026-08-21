@@ -4,22 +4,8 @@ import { publicProcedure, router } from '@/trpc.js';
 import { querySchema } from './schema.js';
 import { NoPathAvailableError, queryService } from './services/index.js';
 
-/**
- * `POST /query` is a REST route rather than a tRPC procedure because the
- * interface contract pins it: it is the graded artifact and it must be callable
- * with plain curl. The tRPC procedure below wraps the same service, so the
- * console gets end-to-end types without a second implementation.
- */
 export const queryRoutes = new Hono();
 
-/**
- * POST /query.
- *
- * Validation failures come back with field-level details so the console can
- * render inline validation rather than a generic failure. A `NoPathAvailableError`
- * becomes a 503 rather than a guessed answer: nothing honest can be returned, and
- * serving a guess would violate the system's central promise.
- */
 queryRoutes.post('/', async (c) => {
 	const body = await c.req.json().catch(() => null);
 	const parsed = querySchema.safeParse(body);

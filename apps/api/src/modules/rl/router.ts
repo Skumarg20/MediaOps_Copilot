@@ -6,11 +6,6 @@ import { transactionService } from '@/modules/transaction/index.js';
 import { parseActionKey } from './services/state.js';
 import { TRIAGE_CLASSES } from './services/state.js';
 
-/**
- * Powers the console's RL panel: per-arm pulls and mean reward, plus the reward
- * time series that makes "it improved over the session" something you can see
- * rather than something the README claims.
- */
 async function buildStats({ limit }: { limit: number }) {
 	const snapshot = await getContext().bandit.snapshot();
 	const totalPulls = snapshot.reduce((sum, arm) => sum + arm.pulls, 0);

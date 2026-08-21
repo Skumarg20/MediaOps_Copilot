@@ -2,11 +2,6 @@ import { logs, SeverityNumber, type LogRecord } from '@opentelemetry/api-logs';
 import { describe, expect, it, vi } from 'vitest';
 import { createOtelLogStream, otelTraceContextMixin } from '@/otel/logBridge.js';
 
-/**
- * The bridge exists because `@opentelemetry/instrumentation-pino` never patches
- * pino here — it hooks CJS `require`, and pino is imported directly from ESM.
- * These tests pin the translation it performs in the instrumentation's place.
- */
 function captureEmittedRecords(): { records: LogRecord[]; restore: () => void } {
 	const records: LogRecord[] = [];
 	const spy = vi.spyOn(logs, 'getLogger').mockReturnValue({
@@ -66,7 +61,6 @@ describe('pino to OpenTelemetry log bridge', () => {
 			transaction_id: 'tx-1',
 			hits: 3
 		});
-		// Envelope fields are carried by the record itself, not duplicated as attributes.
 		for (const key of ['level', 'ts', 'msg', 'service', 'version']) {
 			expect(record?.attributes).not.toHaveProperty(key);
 		}

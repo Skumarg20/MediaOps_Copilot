@@ -1,12 +1,6 @@
 import type { Evidence } from '@/types.js';
 
 
-/**
- * Gate 2 of the grounding chain: the constrained prompt. Retrieved text is
- * delimited as *data*, never as instruction, so a runbook containing the words
- * "call restart_render" cannot become a tool call — the tool schema is a closed
- * whitelist parsed out-of-band from the model's own Action line.
- */
 export const SYSTEM_PROMPT =`You are MediaOps Copilot, a support assistant for a render-orchestration platform.
 
 RULES — these are absolute:
@@ -30,16 +24,6 @@ export function renderEvidenceBlock(evidence: Evidence[]): string {
     .join('\n\n');
 }
 
-/**
- * Assembles the per-turn prompt.
- *
- * The evidence ids are restated as a closed list because that measurably reduces
- * invented ones: a 3B model observed live cited `evidence:RENDER_TIMEOUT`, having
- * generalised the shape of the system prompt example rather than copying an id it
- * had been given. The citation validator catches that with certainty, but an
- * abstention the operator did not need is still a worse answer, and helping the
- * model copy correctly costs one line and weakens no gate.
- */
 export function buildPrompt(opts: {
   query: string;
   evidence: Evidence[];
@@ -70,11 +54,6 @@ export function buildPrompt(opts: {
 }
 
 
-/**
- * The degraded answer: no model ran, so the structured record is templated
- * verbatim. Every step down the degradation ladder is more verifiable than the
- * one above it, and this rung is the most verifiable of all — it is the record.
- */
 export function templateAnswerFromEvidence(evidence: Evidence[]): { answer: string; citedIds: string[] } {
   const usable = evidence.slice(0, 2);
   if (usable.length === 0) return { answer: '', citedIds: [] };

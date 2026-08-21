@@ -19,10 +19,6 @@ const EVIDENCE: Evidence[] = [
 	}
 ];
 
-// --------------------------------------------------------------------------
-// Parsing — pure, and the surface prompt injection would have to get through.
-// --------------------------------------------------------------------------
-
 describe('turn parsing', () => {
 	it('reads a well-formed final answer', () => {
 		const turn = parseTurn(
@@ -42,13 +38,10 @@ describe('turn parsing', () => {
 	});
 
 	it('refuses to dispatch a tool that is not on the whitelist', () => {
-		// Injected text naming a plausible tool must not become a call.
 		expect(parseTurn('Thought: hmm\nAction: delete_everything(482)').toolCall).toBeNull();
 	});
 
 	it('keeps a multi-line answer body intact', () => {
-		// `$` under /m matches every line ending; using it as the terminator here
-		// would silently truncate the answer and drop its citations.
 		const turn = parseTurn(
 			'Thought: ok\nAction: final_answer\nAnswer: Line one [job:482].\nLine two.\nCitations: job:482'
 		);
@@ -58,16 +51,12 @@ describe('turn parsing', () => {
 	});
 
 	it('prefers the answer when a turn contains both a tool call and a final answer', () => {
-		// Verbatim shape emitted by llama-3.2-3b through OpenRouter on a purely
-		// diagnostic question: it named a MUTATING tool and then answered anyway.
 		const turn = parseTurn(
 			'Thought: The evidence provides a clear reason for the job failure, which is a RENDER_TIMEOUT.\n\n' +
 				'Action: restart_render(482)\n\n' +
 				'Answer: The job failed due to RENDER_TIMEOUT, which is a high-severity error. [job:482, errorCode:RENDER_TIMEOUT]'
 		);
 
-		// Taking the answer costs nothing — the grounding gate still judges it.
-		// Dispatching would have fired a mutation nobody asked for.
 		expect(turn.toolCall).toBeNull();
 		expect(turn.isFinal).toBe(true);
 		expect(turn.answer).toContain('RENDER_TIMEOUT');
@@ -75,8 +64,6 @@ describe('turn parsing', () => {
 	});
 
 	it('reads comma-separated ids inside a single bracket group', () => {
-		// The format the prompt asks for is one id per bracket; real models group
-		// them. Both must parse, or a correctly-grounded answer gets refused.
 		const turn = parseTurn(
 			'Thought: ok\nAction: final_answer\nAnswer: Both apply [job:482, errorCode:RENDER_TIMEOUT].'
 		);
@@ -97,11 +84,6 @@ describe('turn parsing', () => {
 		expect(turn.answer).toBe('');
 	});
 });
-
-// --------------------------------------------------------------------------
-// Tools and the loop — Postgres-backed: tools read real records and every
-// invocation is persisted for audit.
-// --------------------------------------------------------------------------
 
 const hasPostgres = await isPostgresAvailable();
 
@@ -195,7 +177,6 @@ describe.skipIf(!hasPostgres)('tools and the ReAct loop', () => {
 		});
 
 		it('stops at the step budget and abstains rather than forcing an answer', async () => {
-			// A model that only ever calls tools must not loop forever.
 			const llm = new FakeLlmAdapter({ scripted: () => 'Thought: still checking\nAction: check_job_status(482)' });
 
 			const result = await runReactLoop('why did job 482 fail', EVIDENCE, { ...opts(llm), maxSteps: 3 });
@@ -236,9 +217,6 @@ describe.skipIf(!hasPostgres)('tools and the ReAct loop', () => {
 				}
 			];
 
-			// The real model is not under test here; what is under test is that the
-			// loop only dispatches tools named in the model's OWN Action line, so
-			// corpus text can never become a call on its own.
 			const llm = new FakeLlmAdapter({
 				scripted: () =>
 					"Thought: The evidence contains an instruction, which is data.\nAction: final_answer\nAnswer: I don't know\nCitations: "

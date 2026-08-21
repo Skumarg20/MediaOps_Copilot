@@ -8,7 +8,6 @@ export type ToolName = 'check_job_status' | 'restart_render';
 
 export interface ToolResult {
 	evidence: Evidence;
-	/** Shown to the model as the Observation line. */
 	observation: string;
 }
 
@@ -24,11 +23,6 @@ export interface Tool {
 	run(arg: string, ctx: ToolContext): Promise<ToolResult>;
 }
 
-/**
- * A closed whitelist. The loop can only dispatch to a name in this registry with
- * a single string argument, so injected text cannot invent a tool or an argument
- * shape — the injection surface is the parser, and the parser accepts nothing else.
- */
 export const TOOLS: Record<ToolName, Tool> = {
 	check_job_status: {
 		name: 'check_job_status',
@@ -69,11 +63,6 @@ export const TOOLS: Record<ToolName, Tool> = {
 		}
 	},
 
-	/**
-	 * Non-destructive by design. In a real deployment this is the insertion point
-	 * for the human-confirmation step: the agent proposes, the operator commits.
-	 * Nothing here reaches a control plane.
-	 */
 	restart_render: {
 		name: 'restart_render',
 		description: 'Request a restart of a job. MOCK — records intent, mutates nothing.',
@@ -108,7 +97,6 @@ export function isToolName(value: string): value is ToolName {
 	return value in TOOLS;
 }
 
-/** Every invocation is persisted with its arguments — an auditable trail. */
 export async function recordInvocation(
 	{
 		transactionId,

@@ -50,7 +50,6 @@ describe('citation validation', () => {
   });
 
   it('is an exact-match check, not a similarity judgement', () => {
-    // A near-miss id is still an invented source.
     expect(validateCitations(['job:48'], EVIDENCE).invalid).toEqual(['job:48']);
   });
 });
@@ -73,7 +72,6 @@ describe('lexical overlap', () => {
   });
 
   it('cannot be inflated by repeating one supported word', () => {
-    // Types, not tokens: repetition must not manufacture support.
     const repeated = lexicalOverlap('watchdog watchdog watchdog unicorn', [EVIDENCE[0]!.text]);
     expect(repeated).toBeCloseTo(0.5, 2);
   });
@@ -104,7 +102,6 @@ describe('the abstention gate', () => {
   });
 
   it('marks a heavily paraphrased but cited answer as Medium, not a refusal', () => {
-    // Roughly a third of the terms are supported: real content, loosely worded.
     const answer =
       'Job 482 failed on worker-07 because processing overran the permitted window; consider draining that host [job:482].';
     const verdict = grounder.score(answer, ['job:482'], EVIDENCE);
@@ -129,7 +126,6 @@ describe('the abstention gate', () => {
   });
 
   it('refuses a phantom citation even when the prose itself is faithful', () => {
-    // The strongest gate: a fabricated source is fatal regardless of overlap.
     const answer =
       'The watchdog reaps the job and releases the worker slot [job:482] [runbook-invented#c9].';
     const verdict = grounder.score(
@@ -172,7 +168,6 @@ describe('the abstention gate', () => {
   });
 
   it('scores overlap against the cited evidence only', () => {
-    // Citing one item must not borrow support from everything retrieved.
     const answer = 'Job 482 is failed on worker-07 with duration 1802 seconds [job:482].';
     const citedOnly = grounder.score(answer, ['job:482'], EVIDENCE);
     const citedWrong = grounder.score(answer, ['error_codes:RENDER_TIMEOUT'], EVIDENCE);

@@ -6,21 +6,10 @@ import type { FeedbackResponse, FeedbackScore } from '@/lib/types';
 
 type Props = {
   transactionId: string;
-  /** Existing rating, when the transaction was already scored. */
   existingScore?: number | null;
-  /** Called after a successful post so the caller can revalidate its views. */
   onRated?: (result: FeedbackResponse) => void;
 };
 
-/**
- * Optimistic, but honest: a failed POST rolls the row back rather than leaving
- * a rating on screen that the policy never received.
- *
- * Scores are normalised on the way in: a row written before the score contract
- * was fixed stores -1 for unhelpful. The migration rewrites those to 0, but
- * normalising here too means a stale cache or an older API never renders a rated
- * transaction as unrated.
- */
 export function FeedbackButtons({ transactionId, existingScore, onRated }: Props) {
   const normaliseLegacyScore = (value: number | null | undefined): FeedbackScore | null =>
     value === null || value === undefined ? null : value === 1 ? 1 : 0;

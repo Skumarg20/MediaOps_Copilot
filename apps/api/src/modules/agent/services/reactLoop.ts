@@ -16,17 +16,6 @@ export type ParsedTurn = {
 };
 
 
-/**
- * Tolerant parser. A 3B model will drift from any format eventually; the loop
- * must degrade to an honest abstention rather than crash on a malformed turn.
- *
- * When a turn contains BOTH an Action tool call and a finished Answer — which a
- * small model does routinely — the answer wins. That turn is self-contradictory
- * and the two readings are not equally safe: dispatching the tool would discard
- * an answer the model already committed to and fire a *mutating* action nobody
- * asked for, while taking the answer costs nothing, since the grounding gate
- * rejects it moments later if it turns out to be ungrounded.
- */
 export function parseTurn(raw: string): ParsedTurn {
   const text = raw.trim();
   const valueAfterLabel = (label: string): string => {
@@ -71,14 +60,6 @@ export type ReactOptions = {
   maxSteps?: number;
 };
 
-/**
- * Bounded by construction: a hard step cap, a per-call timeout inside the
- * adapter, and a whitelisted tool schema mean the loop cannot run away, cannot
- * call an unknown tool, and cannot exceed its latency budget.
- *
- * Budget exhaustion is not an error — it produces an honest abstention that
- * carries the hallucination penalty into the reward.
- */
 export async function runReactLoop(
   query: string,
   initialEvidence: Evidence[],

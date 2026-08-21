@@ -4,18 +4,6 @@ import { logEvent, logger, recordDependency, retrievalHits } from '@/utils/index
 import type { DependencyStatus, Evidence, QueryContext, Retriever } from '@/types.js';
 import { Bm25Index, type Bm25Doc } from './bm25.js';
 
-/**
- * Two mechanisms behind one retriever:
- *
- *  1. Exact lookup — jobs by ID, error codes by code. The evidence id is the
- *     field path (`job:482`), so the citation is verifiable by construction
- *     rather than by similarity.
- *  2. BM25 over the concatenated text of the same structured records, for
- *     keyword queries with no exact key. Also floored.
- *
- * No network, no model, no embedding — which is why this is the path the system
- * degrades *towards*.
- */
 export class VectorlessRetriever implements Retriever {
 	readonly name = 'vectorless' as const;
 	private bm25 = new Bm25Index();
@@ -24,7 +12,6 @@ export class VectorlessRetriever implements Retriever {
 		return this.bm25.size;
 	}
 
-	/** Rebuilt from Postgres; cheap enough to call on every seed change. */
 	async build(): Promise<number> {
 		const [jobs, errorCodes] = await Promise.all([platformService.listJobs(), platformService.listErrorCodes()]);
 		const docs: Bm25Doc[] = [];
@@ -60,15 +47,6 @@ export class VectorlessRetriever implements Retriever {
 		return docs.length;
 	}
 
-	/**
-	 * Two floors, because a raw score floor alone is not enough. A single
-	 * corpus-wide term ("render") can carry a document over any score threshold,
-	 * which is how an open-ended question like "why is my render slower than usual"
-	 * gets answered with a plausible-looking error-code definition that does not
-	 * address it. Requiring the hit to cover a real share of the query's content
-	 * terms is what makes this path abstain instead — the outcome the routing
-	 * design depends on.
-	 */
 	async retrieve(query: string, ctx: QueryContext): Promise<Evidence[]> {
 		const exact = await this.exactHits(ctx);
 		if (exact.length > 0) {
@@ -110,13 +88,6 @@ export class VectorlessRetriever implements Retriever {
 		}));
 	}
 
-	/**
-	 * Anchors were already resolved against real primary keys by the hard router,
-	 * so a hit here is definitionally correct — not a heuristic guess.
-	 *
-	 * A failure reason is a foreign key into the glossary; following it turns
-	 * "job 482 failed with RENDER_TIMEOUT" into an answer that also explains it.
-	 */
 	private async exactHits(ctx: QueryContext): Promise<Evidence[]> {
 		const out: Evidence[] = [];
 

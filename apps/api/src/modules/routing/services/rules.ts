@@ -13,16 +13,9 @@ export interface PinDecision {
 	path: RetrievalPath | null;
 	reason: string;
 	deterministic: boolean;
-	/** Machine-readable reason for the log's closed vocabulary. */
 	code: PinCode;
 }
 
-/**
- * Anchors are resolved against real primary keys, not guessed. A token only
- * becomes an anchor if it exists in the store — which is what makes the pin a
- * fact rather than a heuristic.
- * A number is only a job ID when it resolves, so "1802 seconds" never pins.
- */
 export async function extractAnchors({ query }: { query: string }): Promise<StructuredAnchors> {
 	const [jobIds, errorCodes] = await Promise.all([
 		platformService.getJobIds(),
@@ -42,23 +35,10 @@ export async function extractAnchors({ query }: { query: string }): Promise<Stru
 
 export interface PinInput {
 	anchors: StructuredAnchors;
-	/** Vector path is unusable — index empty or embeddings down. */
 	vectorAvailable: boolean;
 	forceVectorless: boolean;
 }
 
-/**
- * Stage 1 of routing. Only the genuinely uncertain residual reaches the bandit;
- * spending exploration budget on an exact key match would be strictly worse than
- * knowing the answer.
- *
- * Anchors are checked BEFORE vector availability. Both can be true at once, and
- * when they are the exact match is the honest explanation: the query would have
- * taken this path regardless of the index's health, so reporting a degradation
- * would tell the operator the answer is a fallback when it is in fact the best
- * available answer. Only once no anchor resolves does index health decide, and
- * that case is a genuine degradation, labelled as one.
- */
 export function decidePin(input: PinInput): PinDecision {
 	if (input.forceVectorless) {
 		return {

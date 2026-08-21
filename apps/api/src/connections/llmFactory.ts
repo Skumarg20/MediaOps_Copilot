@@ -5,16 +5,6 @@ import type { LlmAdapter } from './llm.types.js';
 import { OllamaAdapter } from './ollama.js';
 import { OpenRouterAdapter } from './openrouter.js';
 
-/**
- * Chooses the model runtime at boot from `LLM_PROVIDER`.
- *
- * The choice is a composition detail, not a behavioural one: every caller is
- * written against `LlmAdapter`, so the ReAct loop, the grounding gate, the
- * bandit, and every route are identical whichever branch runs.
- *
- * `hybrid` without a key downgrades to the local runtime and says so at warn
- * level, because an operator seeing local latency deserves to know why.
- */
 export function createLlmAdapter(): LlmAdapter {
 	const ollama = new OllamaAdapter();
 	const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY);

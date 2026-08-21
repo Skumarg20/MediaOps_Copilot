@@ -1,10 +1,5 @@
 import { STOPWORDS } from '@/utils/index.js';
 
-/**
- * Lowercased content words, with citation markers stripped first: markers are
- * formatting, not content, and counting them would let a model inflate its own
- * overlap score simply by citing more.
- */
 export function contentTokens(text: string): string[] {
   return text
     .toLowerCase()
@@ -14,18 +9,6 @@ export function contentTokens(text: string): string[] {
     .filter((token) => token.length > 2 && !STOPWORDS.has(token));
 }
 
-/**
- * Fraction of the answer's content tokens that appear in the cited evidence.
- *
- * Chosen over an LLM self-check as the *primary* gate deliberately: a
- * self-check asks the same class of system that produced the error to detect
- * it, costs a second generation, and is unfalsifiable. This is cheap,
- * deterministic, unit-testable, and fails in the safe direction — heavy
- * paraphrase reads as low-confidence rather than invention reading as fact.
- *
- * Coverage is counted over unique tokens — types, not tokens — so repeating one
- * supported word twenty times cannot manufacture support the evidence never gave.
- */
 export function lexicalOverlap(answer: string, evidenceTexts: string[]): number {
   const answerTokens = contentTokens(answer);
   if (answerTokens.length === 0) return 0;

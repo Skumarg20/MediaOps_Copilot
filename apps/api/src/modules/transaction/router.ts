@@ -3,11 +3,6 @@ import { operatorProcedure, router } from '@/trpc.js';
 import { listTransactionsSchema } from './schema.js';
 import { transactionService } from './services/index.js';
 
-/**
- * The console feed. Not part of the graded contract, but the console cannot
- * function without it — and it is the same view an engineer would want when
- * asked "what has this thing been doing".
- */
 export const transactionRoutes = new Hono();
 
 transactionRoutes.get('/', async (c) => {

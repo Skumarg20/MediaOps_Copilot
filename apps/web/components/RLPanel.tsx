@@ -71,13 +71,6 @@ export function RLPanel() {
   );
 }
 
-/**
- * Mean reward is signed and can legitimately sit below zero, so the bar is
- * drawn from a centred origin. A bar chart that clamped at zero would hide the
- * arms that are actively bad, which is the most useful thing on this panel.
- *
- * Rewards land roughly within ±12, which sets the axis limit below.
- */
 function ArmBar({ arm, isBest }: { arm: ArmStat; isBest: boolean }) {
   const REWARD_AXIS_LIMIT = 12;
   const clamped = Math.max(-REWARD_AXIS_LIMIT, Math.min(REWARD_AXIS_LIMIT, arm.mean_reward));

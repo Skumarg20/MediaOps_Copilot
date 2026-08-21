@@ -9,10 +9,8 @@ export type Bm25Doc = {
 
 export type Bm25Hit = Bm25Doc & {
   score: number;
-  /** Distinct query terms this document actually contains. */
   matchedTerms: number;
   queryTerms: number;
-  /** matchedTerms / queryTerms — how much of the question the hit addresses. */
   coverage: number;
 };
 
@@ -55,9 +53,6 @@ export class Bm25Index {
     this.avgLength = this.docs.length === 0 ? 0 : total / this.docs.length;
   }
 
-  /**
-   * Probabilistic IDF with the +1 shift that keeps common terms non-negative.
-   */
   private idf(term: string): number {
     const n = this.docs.length;
     const df = this.df.get(term) ?? 0;

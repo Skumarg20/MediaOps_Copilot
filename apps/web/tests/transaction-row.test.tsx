@@ -64,7 +64,6 @@ describe('TransactionRow', () => {
 
     render(<TransactionRow transaction={abstained} />);
 
-    // Abstention must read as deliberate honesty, not as an error.
     expect(screen.getByText('abstained')).toBeInTheDocument();
     expect(screen.queryByText(/grounded/)).not.toBeInTheDocument();
   });

@@ -1,10 +1,5 @@
 import type { Knex } from 'knex';
 
-/**
- * The vocabulary of the whole system. Every module speaks in these terms so
- * the verification plane never needs to know where evidence came from.
- */
-
 export type RetrievalPath = 'vector' | 'vectorless';
 
 export type ModelArm = 'llama3.2:3b' | 'qwen2.5:3b';
@@ -15,18 +10,10 @@ export type ConfidenceBand = 'High' | 'Medium' | 'Low';
 
 export type EvidenceSource = 'vector' | 'vectorless' | 'tool';
 
-/**
- * The universal currency of the system. Both retrievers and every tool emit
- * these, which is what makes citation validation, grounding and the rationale
- * panel path-agnostic.
- */
 export type Evidence = {
-  /** "runbook-timeouts#c3" | "job:482.failure_reason" | "tool:check_job_status(482)" */
   id: string;
   source: EvidenceSource;
-  /** The exact text the answer may rely on. */
   text: string;
-  /** cosine / BM25 / undefined for exact hits */
   score?: number;
   meta: Record<string, unknown>;
 };
@@ -39,7 +26,6 @@ export type StructuredAnchors = {
 export type QueryContext = {
   transactionId: string;
   triage: Triage;
-  /** Job IDs / error codes the hard router resolved against real data. */
   anchors: StructuredAnchors;
 };
 
@@ -61,14 +47,12 @@ export type Action = {
   model: ModelArm;
 };
 
-/** Canonical arm key, e.g. "vectorless|llama3.2:3b". */
 export type ActionKey = string;
 
 export type ArmStats = {
   state: TriageClass;
   action: ActionKey;
   pulls: number;
-  /** Pulls whose reward actually arrived; the N the sample-mean update divides by. */
   ratedPulls: number;
   meanReward: number;
   lastUpdated: string;
@@ -79,21 +63,14 @@ export type Decision = {
   exploring: boolean;
   epsilon: number;
   armStats: ArmStats;
-  /** Arms the bandit was allowed to consider after masking. */
   consideredArms: ActionKey[];
 };
 
 export interface Policy {
   select(state: TriageClass, allowed: Action[]): Promise<Decision>;
   update(state: TriageClass, action: Action, reward: number): Promise<ArmStats>;
-  /** Provisional phase: the pull happened, the reward has not arrived yet. */
   registerPull(state: TriageClass, action: Action): Promise<ArmStats>;
   snapshot(): Promise<ArmStats[]>;
-  /**
-   * A policy bound to `trx`, so a rating and the policy update it causes commit
-   * or roll back together. Without it a failed update leaves feedback recorded
-   * and the arm none the wiser, and the retry is refused as a duplicate.
-   */
   withTransaction(trx: Knex): Policy;
 }
 
@@ -103,7 +80,6 @@ export type GroundingVerdict = {
   validCitations: string[];
   invalidCitations: string[];
   grounded: boolean;
-  /** Human-readable reason, surfaced verbatim in the rationale. */
   reason: string;
 };
 
@@ -121,13 +97,11 @@ export type Triage = {
   class: TriageClass;
   confidence: number;
   topFeatures: FeatureContribution[];
-  /** Per-class softmax scores, kept internal but useful in logs. */
   scores: Record<TriageClass, number>;
 };
 
 export type QueryMeta = {
   anchors: StructuredAnchors;
-  /** Known incidents sharing the query's dominant keyword; a data lookup. */
   incidentMatchCount?: number;
 };
 
@@ -220,7 +194,6 @@ export type AgentResult = {
   citedIds: string[];
   steps: AgentStep[];
   evidence: Evidence[];
-  /** True when the answer was produced without a live model. */
   degraded: boolean;
   degradedReason?: string;
 };

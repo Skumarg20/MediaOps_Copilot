@@ -20,12 +20,6 @@ const {
 
 const MAX_POOL_SIZE = PROJECT_ENV === 'production' ? 50 : 2;
 
-/**
- * Pinned rather than left to Postgres's default `"$user", public`. That default
- * resolves `$user` to the `copilot` schema whenever the DB user shares its name,
- * so an unqualified reference added later would land somewhere surprising. Every
- * query in this codebase is schema-qualified today, which makes this belt-and-braces.
- */
 const EXPLICIT_PUBLIC_SEARCH_PATH = ['public'];
 
 export let db: Knex = knex({
@@ -44,20 +38,10 @@ export let db: Knex = knex({
 });
 
 
-/**
- * Test seam. Service functions default their `trx` parameter to `db`, and that
- * default is evaluated per call, so swapping the binding here redirects every
- * query without threading a connection through call signatures that would carry
- * it for no other reason.
- */
 export function setDb(next: Knex): void {
 	db = next;
 }
 
-/**
- * The `select 1` probe behind /health. A failure here is fatal, not degraded:
- * nothing can be recorded or learned, so serving would be dishonest.
- */
 export async function pingDb(connection: Knex = db): Promise<boolean> {
 	try {
 		await connection.raw('select 1');

@@ -67,17 +67,11 @@ export function fetchRlStats(): Promise<RlStats> {
   return request<RlStats>('/rl/stats');
 }
 
-/**
- * /health answers 503 when SQLite is gone, and the pill still needs to render
- * that state — so this one path reads the body regardless of status rather than
- * throwing.
- */
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_URL}/health`);
   return (await res.json()) as HealthResponse;
 }
 
-/** Keys for SWR, kept in one place so `mutate` targets never drift. */
 export const swrKeys = {
   transactions: (limit: number) => `transactions:${limit}`,
   rlStats: 'rl-stats',

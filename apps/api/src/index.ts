@@ -27,23 +27,10 @@ export const appRouter = router({
 
 export type AppRouter = typeof appRouter;
 
-/**
- * How long a shutdown waits for in-flight connections before exiting hard, kept
- * under a typical orchestrator grace period so a hung connection cannot hold the
- * container open past it.
- */
 const FORCED_EXIT_AFTER_GRACE_MS = 5_000;
 
-/** Comfortably above the largest legitimate body: a 2000-character query. */
 const MAX_REQUEST_BYTES = 64 * 1024;
 
-/**
- * Builds the Hono app.
- *
- * CORS is wide open because this is a single-operator console and auth is out of
- * scope for this build. Authentication belongs here, in front of all routes,
- * with /health and /metrics moved to a separate internal listener.
- */
 export function createApp(): Hono {
 	const app = new Hono();
 
@@ -54,11 +41,6 @@ export function createApp(): Hono {
 		})
 	);
 
-	/**
-	 * A query is capped at 2000 characters, but zod only sees the body after it
-	 * has been read into memory. This caps it before that, so an oversized POST
-	 * costs a 413 rather than a buffer the size of whatever was sent.
-	 */
 	app.use('*', bodyLimit({ maxSize: MAX_REQUEST_BYTES, onError: (c) => c.json({ error: 'payload_too_large' }, 413) }));
 
 	app.use('*', otelMiddleware());
@@ -116,15 +98,6 @@ export function createApp(): Hono {
 	return app;
 }
 
-/**
- * A rejection nobody caught kills the process on Node 20 by default, and it does
- * it with a bare stack on stderr — outside the JSON stream, uncorrelated, and
- * invisible to anything reading the logs. Logging it in the house format first
- * is the difference between "the container restarted" and knowing why.
- *
- * The process still exits. Continuing after an unknown failure would leave the
- * service in a state nothing has reasoned about.
- */
 function logFatal(kind: 'unhandledRejection' | 'uncaughtException', error: unknown): void {
 	logger.error({ event: 'boot.failed', kind, error }, 'fatal: unhandled error');
 	setTimeout(() => process.exit(1), 100).unref();

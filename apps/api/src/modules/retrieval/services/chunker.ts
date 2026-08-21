@@ -1,21 +1,12 @@
 import { config } from '@/config.js';
 
 export type Chunk = {
-  /** "runbook-timeouts-and-retries#c3" — stable, human-resolvable, citable. */
   id: string;
   docId: string;
   heading: string;
   text: string;
 };
 
-/**
- * Heading-aware chunking. Splitting on headings first means a chunk is a
- * self-contained passage under a title a human can find in the source file —
- * which is what makes a citation verifiable rather than decorative.
- *
- * Each chunk carries its own heading inside the text, so an embedded chunk keeps
- * its topic and an excerpt reads sensibly on its own in the console.
- */
 export function chunkMarkdown(
   docId: string,
   markdown: string,
@@ -64,10 +55,6 @@ function splitByHeading(markdown: string): Array<{ heading: string; body: string
     .filter((s) => s.body.length > 0);
 }
 
-/**
- * Packs paragraphs up to `size`, carrying `overlap` characters of the previous
- * chunk forward so a claim spanning a paragraph boundary is never orphaned.
- */
 function splitToSize(body: string, size: number, overlap: number): string[] {
   const paragraphs = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   if (paragraphs.length === 0) return [];

@@ -20,21 +20,6 @@ export class NoPathAvailableError extends Error {
 	}
 }
 
-/**
- * The answer path, in the order the design lays it out:
- *   triage → route → retrieve → reason → verify → explain → learn (provisional)
- *
- * Every stage records its decision rather than only its outcome, which is what
- * the RL loop and the rationale panel are both built from.
- *
- * Two behaviours are load-bearing and easy to mistake for accidents. An empty
- * result from the chosen path retries the deterministic one, which moves *down*
- * the degradation ladder toward the more verifiable answer, never up. And when
- * nothing passes the retrieval floor no model is invoked at all — the cheapest
- * hallucination defence is not generating in the first place — while the
- * resulting abstention stays a first-class outcome: 200, the same rating path,
- * and the arm still pays its penalty.
- */
 export async function handleQuery({ query }: { query: string }): Promise<QueryResponse> {
 	const ctx = getContext();
 	const transactionId = randomUUID();

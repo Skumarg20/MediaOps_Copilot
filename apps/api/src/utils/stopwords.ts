@@ -32,19 +32,6 @@ const INTERROGATIVES_AND_DISCOURSE = [
   'not', 'yes', 'please', 'thanks', 'ok', 'okay',
 ];
 
-/**
- * One stopword list for the whole system.
- *
- * This used to be three near-identical copies — in the BM25 index, the overlap
- * scorer, and the test embedder — and they drifted. The BM25 copy was missing
- * "than", which let a record match a function word and clear the coverage floor
- * on a query it had nothing to do with. A shared list makes that class of bug
- * impossible rather than merely unlikely.
- *
- * Interrogatives (why/how/what/which) are included deliberately: they carry the
- * *shape* of a question, which the triage classifier reads as a feature, but
- * they carry no topical signal for retrieval or for grounding overlap.
- */
 export const STOPWORDS: ReadonlySet<string> = new Set([
   ...ARTICLES_AND_DETERMINERS,
   ...PRONOUNS_AND_POSSESSIVES,

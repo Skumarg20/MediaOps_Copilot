@@ -15,11 +15,6 @@ const EXAMPLES = [
   'how do I safely retry a stuck job',
 ];
 
-/**
- * The example buttons are not decoration — they are the two canonical routing
- * cases plus a pinned lookup, so the routing thesis is one click away rather
- * than something the reader has to reconstruct from the README.
- */
 export function QueryBox({ onPending, onAnswered }: Props) {
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);

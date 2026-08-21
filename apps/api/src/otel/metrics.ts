@@ -11,14 +11,6 @@ export type HttpServerMetrics = {
 	requestsTotal: Counter;
 };
 
-/**
- * The OTLP twin of the Prometheus instruments in `utils/metrics.ts`.
- *
- * Both are kept deliberately. `/metrics` stays scrapeable with no collector in
- * the picture, which is what makes the service demonstrable on a laptop, while
- * these instruments carry the same numbers to a collector alongside the traces
- * they belong to.
- */
 export function createHttpServerMetrics(meter: Meter): HttpServerMetrics {
 	const requestDuration = meter.createHistogram('http.server.request.duration', {
 		description: 'Duration of HTTP requests in seconds',

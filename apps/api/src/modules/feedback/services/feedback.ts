@@ -7,16 +7,6 @@ import { childLogger, logEvent } from '@/utils/index.js';
 import type { FeedbackResponse } from '@/types.js';
 import type { FeedbackScore } from '../schema.js';
 
-/**
- * Terminal phase of the two-phase RL update. Latency and the hallucination
- * penalty were measured at answer time; the operator rating completes the
- * reward that the provisional phase deliberately left open.
- *
- * The rating and the policy update it causes commit together or not at all. A
- * rating written without its update would be lost for good: the row makes every
- * retry a 409, so the arm would never see a reward the operator believes they
- * gave it.
- */
 export async function recordFeedback({
 	transactionId,
 	score

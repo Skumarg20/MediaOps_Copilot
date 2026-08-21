@@ -19,18 +19,9 @@ type JobFixture = {
 
 type ErrorCodeFixture = Record<string, { meaning: string; severity: string; remediation: string }>;
 
-/**
- * Required rather than read from disk so tsc bundles the fixtures into dist/ and
- * they resolve identically inside the container.
- */
 const jobsFixture = require('../data/jobs.json') as JobFixture[];
 const errorCodesFixture = require('../data/errorCodes.json') as ErrorCodeFixture;
 
-/**
- * Reference data is idempotently re-seeded on every boot: it is derived from the
- * repo, so the repo wins. Learned state in the `copilot` schema is never touched
- * here — that is the system's memory.
- */
 export async function seedReferenceData(
 	_args: Record<string, never> = {},
 	trx: Knex = db

@@ -26,12 +26,6 @@ export function allActions(): Action[] {
   return actions;
 }
 
-/**
- * Masking, not filtering after the fact. When a hard rule pins the path the
- * action space shrinks to the two arms sharing it, so the deterministic
- * guarantee survives contact with exploration: the bandit still picks the model,
- * and can never explore its way onto the wrong path.
- */
 export function maskActions(opts: {
   pinnedPath?: RetrievalPath | null;
   availableModels?: ModelArm[] | null;

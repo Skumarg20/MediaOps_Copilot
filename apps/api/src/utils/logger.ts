@@ -2,10 +2,6 @@ import pino from 'pino';
 import { config } from '@/config.js';
 import { createOtelLogStream, otelTraceContextMixin } from '@/otel/logBridge.js';
 
-/**
- * Event names are a closed vocabulary so dashboards and alerts can be built on
- * stable keys rather than log-message regexes.
- */
 export type LogEvent =
   | 'http.request'
   | 'triage.classified'
@@ -32,11 +28,6 @@ export type LogEvent =
   | 'boot.shutdown'
   | 'boot.failed';
 
-/**
- * Fans out to stdout and to the OpenTelemetry Logs API when telemetry is on, and
- * is a plain stdout logger otherwise. Both streams are set to `trace` so the
- * logger's own level stays the single place log volume is decided.
- */
 const destination = config.otel.enabled
   ? pino.multistream([
       { level: 'trace', stream: process.stdout },
@@ -59,15 +50,10 @@ export const logger = pino(
 
 export type Logger = pino.Logger;
 
-/**
- * One child logger per request, so every downstream layer inherits the
- * transaction_id and grepping a single ID replays the whole decision path.
- */
 export function childLogger(transactionId: string): Logger {
   return logger.child({ transaction_id: transactionId });
 }
 
-/** Typed helper that keeps the `event` key mandatory and spelled correctly. */
 export function logEvent(
   log: Logger,
   level: 'info' | 'warn' | 'error' | 'debug',

@@ -26,10 +26,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 		await destroyTestDb(db);
 	});
 
-	/**
-	 * A fresh context and empty learned state per test, so a bandit mean or a
-	 * transaction count from one case can never explain another's result.
-	 */
 	async function useContext(opts: { llm?: FakeLlmAdapter; epsilon?: number } = {}): Promise<AppContext> {
 		await db('copilot.citation').del();
 		await db('copilot.feedback').del();
@@ -39,7 +35,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 
 		ctx = await buildContext({
 			llm: opts.llm ?? new FakeLlmAdapter(),
-			// Pin exploitation so route assertions are not flaky on an ε draw.
 			bandit: { epsilonOverride: opts.epsilon ?? 0, random: () => 0, trx: db }
 		});
 		return ctx;
@@ -115,7 +110,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			await useContext();
 			const { status, body } = await ask('zxqv plorbnat wibble frotz');
 
-			// "I don't know" is a correct answer and must flow through the same path.
 			expect(status).toBe(200);
 			expect(body.grounded).toBe(false);
 			expect(body.answer).toMatch(/don't know/i);
@@ -188,8 +182,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			const res = await app.request('/transactions?limit=1');
 			const listed = (await res.json()) as { transactions: Array<{ rationale: unknown }> };
 
-			// The console reads the stored copy, not the response — if jsonb
-			// mangled it, the panel would render from a different object.
 			expect(listed.transactions[0]?.rationale).toEqual(body.rationale);
 		});
 
@@ -231,7 +223,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			expect(body.arm).toBe(`${query.retrieval_path}|${query.llm_used}`);
 			expect(body.reward).toBeCloseTo(10 - query.latency_ms / 1000, 2);
 			expect(body.arm_pulls).toBeGreaterThanOrEqual(1);
-			// Returning the recomputed stats is what makes this a loop, not a button.
 			expect(body.arm_mean_reward).toBeCloseTo(body.reward, 2);
 		});
 
@@ -245,7 +236,7 @@ describe.skipIf(!hasPostgres)('api', () => {
 			};
 
 			expect(body.reward).toBeLessThan(0);
-			expect(body.arm_mean_reward).toBeLessThan(5); // below the optimistic prior
+			expect(body.arm_mean_reward).toBeLessThan(5);
 		});
 
 		it('returns 404 for an unknown transaction', async () => {
@@ -264,8 +255,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 
 			expect((await rate(query.transaction_id, 1)).status).toBe(409);
 
-			// Match on state as well as arm: the same arm key exists in all three
-			// states, and only this query's state was updated.
 			const stats = (await ctx.bandit.snapshot()).find(
 				(arm) =>
 					arm.state === query.rationale.triage.class &&
@@ -275,8 +264,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 		});
 
 		it('accepts the binary contract the interface specifies: 1 = helpful, 0 = unhelpful', async () => {
-			// The spec fixes these two values. Rejecting 0 would 400 every
-			// "unhelpful" rating a conformant client ever sent.
 			await useContext();
 
 			const helpful = await ask('what does error code RENDER_TIMEOUT mean');
@@ -286,8 +273,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			const res = await rate(unhelpful.body.transaction_id, 0);
 			expect(res.status).toBe(200);
 
-			// Reward = (0 × 10) − latency − penalty, so an unhelpful rating is
-			// negative without needing a -1 anywhere in the contract.
 			const body = (await res.json()) as { reward: number };
 			expect(body.reward).toBeLessThan(0);
 			expect(body.reward).toBeCloseTo(-unhelpful.body.latency_ms / 1000, 2);
@@ -300,7 +285,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			const res = await rate(query.transaction_id, -1);
 			expect(res.status).toBe(200);
 
-			// Same reward as an explicit 0 — the alias changes nothing downstream.
 			const body = (await res.json()) as { reward: number };
 			expect(body.reward).toBeCloseTo(-query.latency_ms / 1000, 2);
 		});
@@ -322,7 +306,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			expect(query.grounded).toBe(false);
 
 			const body = (await (await rate(query.transaction_id, 1)).json()) as { reward: number };
-			// 10 − latency − 5: even a thumbs-up cannot fully excuse an ungrounded answer.
 			expect(body.reward).toBeLessThan(6);
 		});
 	});
@@ -335,7 +318,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			expect(status).toBe(200);
 			expect(body.degraded).toBe(true);
 			expect(body.retrieval_path).toBe('vectorless');
-			// Narrower, but strictly more verifiable: it is the record itself.
 			expect(body.grounded).toBe(true);
 			expect(body.citations.some((citation) => citation.id === 'job:482')).toBe(true);
 			expect(body.rationale.model.why).toMatch(/unavailable|unreachable|failed/i);
@@ -356,7 +338,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			await ask('why did job 482 fail');
 
 			const body = (await (await app.request('/transactions?limit=10')).json()) as { count: number };
-			// Learning must not stop just because generation did.
 			expect(body.count).toBe(1);
 		});
 	});
@@ -395,7 +376,7 @@ describe.skipIf(!hasPostgres)('api', () => {
 				series: Array<{ reward: number }>;
 			};
 
-			expect(body.arms).toHaveLength(12); // 3 states × 4 arms
+			expect(body.arms).toHaveLength(12);
 			expect(body.total_pulls).toBeGreaterThanOrEqual(1);
 			expect(body.series).toHaveLength(1);
 		});
@@ -416,8 +397,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 				series: Array<{ reward: number }>;
 			};
 
-			// Ascending order before the limit would pin this to the first two ratings
-			// ever recorded, and the chart would never move again.
 			expect(body.series).toHaveLength(2);
 			expect(body.series.map((point) => point.reward)).toEqual(rewards.slice(-2));
 		});
@@ -455,8 +434,6 @@ describe.skipIf(!hasPostgres)('api', () => {
 			const res = await app.request('/health');
 			const body = (await res.json()) as { status: string };
 
-			// A degraded instance keeps serving vectorless answers; only a dead one
-			// should be shed by a load balancer.
 			expect(res.status).toBe(200);
 			expect(body.status).toBe('degraded');
 		});
