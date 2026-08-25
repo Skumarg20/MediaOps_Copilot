@@ -154,18 +154,19 @@ export class FakeLlmAdapter implements LlmAdapter {
     return tags;
   }
 
-  async health(): Promise<{ generation: DependencyStatus; embedding: DependencyStatus }> {
+  async generationHealth(): Promise<DependencyStatus> {
     return {
-      generation: {
-        name: 'ollama.generation',
-        status: this.opts.generationDown ? 'degraded' : 'up',
-        detail: this.opts.generationDown ? 'fake: runtime down' : undefined,
-      },
-      embedding: {
-        name: 'ollama.embedding',
-        status: this.opts.embeddingDown ? 'degraded' : 'up',
-        detail: this.opts.embeddingDown ? 'fake: embedding down' : undefined,
-      },
+      name: 'ollama.generation',
+      status: this.opts.generationDown ? 'degraded' : 'up',
+      detail: this.opts.generationDown ? 'fake: runtime down' : undefined,
+    };
+  }
+
+  async embeddingHealth(): Promise<DependencyStatus> {
+    return {
+      name: 'ollama.embedding',
+      status: this.opts.embeddingDown ? 'degraded' : 'up',
+      detail: this.opts.embeddingDown ? 'fake: embedding down' : undefined,
     };
   }
 }

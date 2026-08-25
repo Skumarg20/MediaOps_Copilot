@@ -38,6 +38,10 @@ export let db: Knex = knex({
 });
 
 
+export interface DbOptions {
+	transaction?: Knex;
+}
+
 export function setDb(next: Knex): void {
 	db = next;
 }

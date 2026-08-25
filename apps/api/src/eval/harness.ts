@@ -2,12 +2,12 @@ import { getContext } from '@/context.js';
 import { agentService } from '@/modules/agent/index.js';
 import { routingService } from '@/modules/routing/index.js';
 import { childLogger } from '@/utils/index.js';
-import type { LlmAdapter } from '@/connections/index.js';
+import type { Generator } from '@/connections/index.js';
 import type { Evidence, ModelArm, QueryContext, RetrievalPath } from '@/types.js';
 import type { GoldenCase } from './goldenSet.js';
 import { mulberry32, type ModelBehaviour, type Strategy } from './strategies.js';
 
-export type LlmResolver = (behaviour: ModelBehaviour) => LlmAdapter;
+export type LlmResolver = (behaviour: ModelBehaviour) => Generator;
 
 const EVAL_MODEL: ModelArm = 'llama3.2:3b';
 
@@ -33,7 +33,7 @@ async function retrieveOn(
 	queryContext: QueryContext
 ): Promise<Evidence[]> {
 	const ctx = getContext();
-	const retriever = path === 'vector' ? ctx.vector : ctx.vectorless;
+	const retriever = path === 'vector' ? ctx.vector : path === 'hybrid' ? ctx.hybrid : ctx.vectorless;
 	return retriever.retrieve(query, queryContext);
 }
 
@@ -54,6 +54,7 @@ export async function runCase(
 	const vectorHealth = await ctx.vector.health();
 	const pin = routingService.decidePin({
 		anchors,
+		query: testCase.query,
 		vectorAvailable: vectorHealth.status === 'up',
 		forceVectorless: false
 	});

@@ -1,5 +1,5 @@
 import type { Knex } from 'knex';
-import { db } from '@/connections/index.js';
+import { db, type DbOptions } from '@/connections/index.js';
 import type {
 	ActionKey,
 	Citation,
@@ -61,62 +61,64 @@ interface CitationRow {
 const iso = (value: Date | string | null): string =>
 	value === null ? '' : value instanceof Date ? value.toISOString() : String(value);
 
-export async function insertTransaction(tx: NewTransaction, trx: Knex = db): Promise<string> {
+export async function insertTransaction(record: NewTransaction, { transaction }: DbOptions = {}): Promise<string> {
+	if (!transaction) {
+		return db.transaction((trx) => insertTransaction(record, { transaction: trx }));
+	}
+
 	const createdAt = new Date();
 
-	await trx.transaction(async (t) => {
-		await t('copilot.transaction').insert({
-			id: tx.id,
-			query: tx.query,
-			answer: tx.answer,
-			path: tx.path,
-			model: tx.model,
-			triageClass: tx.triageClass,
-			latencyMs: tx.latencyMs,
-			grounded: tx.grounded,
-			overlapScore: tx.overlapScore,
-			confidenceBand: tx.confidenceBand,
-			hallucinationPenalty: tx.hallucinationPenalty,
-			exploring: tx.exploring,
-			degraded: tx.degraded,
-			rationale: JSON.stringify(tx.rationale),
-			createdAt
-		});
-
-		if (tx.citations.length > 0) {
-			await t('copilot.citation')
-				.insert(
-					tx.citations.map((citation) => ({
-						transactionId: tx.id,
-						evidenceId: citation.id,
-						source: citation.source,
-						score: citation.score ?? null,
-						excerpt: citation.excerpt
-					}))
-				)
-				.onConflict(['transaction_id', 'evidence_id'])
-				.ignore();
-		}
+	await transaction('copilot.transaction').insert({
+		id: record.id,
+		query: record.query,
+		answer: record.answer,
+		path: record.path,
+		model: record.model,
+		triageClass: record.triageClass,
+		latencyMs: record.latencyMs,
+		grounded: record.grounded,
+		overlapScore: record.overlapScore,
+		confidenceBand: record.confidenceBand,
+		hallucinationPenalty: record.hallucinationPenalty,
+		exploring: record.exploring,
+		degraded: record.degraded,
+		rationale: JSON.stringify(record.rationale),
+		createdAt
 	});
+
+	if (record.citations.length > 0) {
+		await transaction('copilot.citation')
+			.insert(
+				record.citations.map((citation) => ({
+					transactionId: record.id,
+					evidenceId: citation.id,
+					source: citation.source,
+					score: citation.score ?? null,
+					excerpt: citation.excerpt
+				}))
+			)
+			.onConflict(['transactionId', 'evidenceId'])
+			.ignore();
+	}
 
 	return createdAt.toISOString();
 }
 
-function baseQuery(trx: Knex) {
-	return trx('copilot.transaction as t')
-		.leftJoin('copilot.feedback as f', 'f.transaction_id', 't.id')
+function baseQuery(transaction: Knex) {
+	return transaction('copilot.transaction as t')
+		.leftJoin('copilot.feedback as f', 'f.transactionId', 't.id')
 		.select(
 			't.*',
-			'f.score as feedback_score',
-			'f.reward as feedback_reward',
-			'f.created_at as feedback_created_at'
+			'f.score as feedbackScore',
+			'f.reward as feedbackReward',
+			'f.createdAt as feedbackCreatedAt'
 		);
 }
 
-async function hydrate(rows: TransactionRow[], trx: Knex): Promise<TransactionRecord[]> {
+async function hydrate(rows: TransactionRow[], transaction: Knex): Promise<TransactionRecord[]> {
 	if (rows.length === 0) return [];
 
-	const citationRows = (await trx('copilot.citation')
+	const citationRows = (await transaction('copilot.citation')
 		.whereIn(
 			'transactionId',
 			rows.map((row) => row.id)
@@ -163,15 +165,21 @@ async function hydrate(rows: TransactionRow[], trx: Knex): Promise<TransactionRe
 	}));
 }
 
-export async function listTransactions({ limit }: { limit: number }, trx: Knex = db): Promise<TransactionRecord[]> {
-	const rows = (await baseQuery(trx).orderBy('t.created_at', 'desc').limit(limit)) as TransactionRow[];
-	return hydrate(rows, trx);
+export async function listTransactions(
+	{ limit }: { limit: number },
+	{ transaction = db }: DbOptions = {}
+): Promise<TransactionRecord[]> {
+	const rows = (await baseQuery(transaction).orderBy('t.createdAt', 'desc').limit(limit)) as TransactionRow[];
+	return hydrate(rows, transaction);
 }
 
-export async function getTransaction({ id }: { id: string }, trx: Knex = db): Promise<TransactionRecord | null> {
-	const row = (await baseQuery(trx).where('t.id', id).first()) as TransactionRow | undefined;
+export async function getTransaction(
+	{ id }: { id: string },
+	{ transaction = db }: DbOptions = {}
+): Promise<TransactionRecord | null> {
+	const row = (await baseQuery(transaction).where('t.id', id).first()) as TransactionRow | undefined;
 	if (!row) return null;
-	const [record] = await hydrate([row], trx);
+	const [record] = await hydrate([row], transaction);
 	return record ?? null;
 }
 
@@ -181,23 +189,29 @@ export interface FeedbackWrite {
 	reward: number;
 }
 
-export async function insertFeedback(feedback: FeedbackWrite, trx: Knex = db): Promise<boolean> {
-	const inserted = await trx('copilot.feedback')
+export async function insertFeedback(
+	feedback: FeedbackWrite,
+	{ transaction = db }: DbOptions = {}
+): Promise<boolean> {
+	const inserted = await transaction('copilot.feedback')
 		.insert({
 			transactionId: feedback.transactionId,
 			score: feedback.score,
 			reward: feedback.reward,
 			createdAt: new Date()
 		})
-		.onConflict('transaction_id')
+		.onConflict('transactionId')
 		.ignore()
-		.returning('transaction_id');
+		.returning('transactionId');
 
 	return inserted.length === 1;
 }
 
-export async function hasFeedback({ transactionId }: { transactionId: string }, trx: Knex = db): Promise<boolean> {
-	const row = await trx('copilot.feedback').where({ transactionId }).first();
+export async function hasFeedback(
+	{ transactionId }: { transactionId: string },
+	{ transaction = db }: DbOptions = {}
+): Promise<boolean> {
+	const row = await transaction('copilot.feedback').where({ transactionId }).first();
 	return Boolean(row);
 }
 
@@ -209,17 +223,20 @@ export interface RewardPoint {
 	createdAt: string;
 }
 
-export async function getRewardSeries({ limit }: { limit: number }, trx: Knex = db): Promise<RewardPoint[]> {
-	const rows = (await trx('copilot.feedback as f')
-		.join('copilot.transaction as t', 't.id', 'f.transaction_id')
+export async function getRewardSeries(
+	{ limit }: { limit: number },
+	{ transaction = db }: DbOptions = {}
+): Promise<RewardPoint[]> {
+	const rows = (await transaction('copilot.feedback as f')
+		.join('copilot.transaction as t', 't.id', 'f.transactionId')
 		.select(
-			'f.transaction_id as transaction_id',
-			trx.raw("t.path || '|' || t.model as arm"),
-			't.triage_class as state',
+			'f.transactionId as transactionId',
+			transaction.raw("t.path || '|' || t.model as arm"),
+			't.triageClass as state',
 			'f.reward as reward',
-			'f.created_at as created_at'
+			'f.createdAt as createdAt'
 		)
-		.orderBy('f.created_at', 'desc')
+		.orderBy('f.createdAt', 'desc')
 		.limit(limit)) as Array<{
 		transactionId: string;
 		arm: string;
@@ -228,13 +245,11 @@ export async function getRewardSeries({ limit }: { limit: number }, trx: Knex = 
 		createdAt: Date;
 	}>;
 
-	return rows
-		.reverse()
-		.map((row) => ({
-			transactionId: row.transactionId,
-			arm: row.arm,
-			state: row.state as TriageClass,
-			reward: row.reward,
-			createdAt: iso(row.createdAt)
-		}));
+	return rows.reverse().map((row) => ({
+		transactionId: row.transactionId,
+		arm: row.arm,
+		state: row.state as TriageClass,
+		reward: row.reward,
+		createdAt: iso(row.createdAt)
+	}));
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { config } from '@/config.js';
-import { getContext } from '@/context.js';
+import { getContext , type AppContext} from '@/context.js';
 import { agentService } from '@/modules/agent/index.js';
 import { ABSTENTION_ANSWER, groundingService } from '@/modules/grounding/index.js';
 import { explainService } from '@/modules/explain/index.js';
@@ -18,6 +18,16 @@ export class NoPathAvailableError extends Error {
 		super(message);
 		this.name = 'NoPathAvailableError';
 	}
+}
+
+function retrieverFor(ctx: AppContext, path: RetrievalPath): Retriever {
+	if (path === 'vector') return ctx.vector;
+	if (path === 'hybrid') return ctx.hybrid;
+	return ctx.vectorless;
+}
+
+function fallbackPathFor(path: RetrievalPath): RetrievalPath {
+	return path === 'hybrid' ? 'vectorless' : 'hybrid';
 }
 
 export async function handleQuery({ query }: { query: string }): Promise<QueryResponse> {
@@ -55,6 +65,7 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 
 	const pin = routingService.decidePin({
 		anchors,
+		query,
 		vectorAvailable,
 		forceVectorless: config.retrieval.forceVectorless
 	});
@@ -64,7 +75,7 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 		deterministic: pin.deterministic
 	});
 
-	const servableModelTags = await ctx.llm.availableModels();
+	const servableModelTags = await ctx.generator.availableModels();
 	const healthyModels = config.models.filter((model: ModelArm) => servableModelTags.has(model));
 	const availableModels = healthyModels.length > 0 ? healthyModels : [...config.models];
 
@@ -93,7 +104,7 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	const model = decision.action.model;
 
 	const queryContext: QueryContext = { transactionId, triage, anchors };
-	const retriever: Retriever = path === 'vector' ? ctx.vector : ctx.vectorless;
+	const retriever: Retriever = retrieverFor(ctx, path);
 
 	const retrieveStart = Date.now();
 	let evidence: Evidence[] = await withSpan('copilot.retrieve', { 'copilot.retrieval_path': path }, () =>
@@ -103,8 +114,8 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 	let fellBack = false;
 
 	if (evidence.length === 0) {
-		const alternatePath: RetrievalPath = path === 'vector' ? 'vectorless' : 'vector';
-		const alternateRetriever: Retriever = alternatePath === 'vector' ? ctx.vector : ctx.vectorless;
+		const alternatePath: RetrievalPath = fallbackPathFor(path);
+		const alternateRetriever: Retriever = retrieverFor(ctx, alternatePath);
 
 		const fallbackEvidence = await withSpan(
 			'copilot.retrieve.fallback',
@@ -157,7 +168,7 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 			{ 'copilot.model': model, 'copilot.evidence_count': evidence.length },
 			() =>
 				agentService.runReactLoop(query, evidence, {
-					llm: ctx.llm,
+					llm: ctx.generator,
 					log,
 					transactionId,
 					model
@@ -247,7 +258,7 @@ export async function handleQuery({ query }: { query: string }): Promise<QueryRe
 				rationale,
 				citations
 			},
-			trx
+			{ transaction: trx }
 		);
 	});
 

@@ -71,13 +71,13 @@ describe('action masking', () => {
 	it('masks out an unavailable model without touching the path choice', () => {
 		const masked = maskActions({ pinnedPath: null, availableModels: ['llama3.2:3b'] });
 
-		expect(masked).toHaveLength(2);
+		expect(masked).toHaveLength(3);
 		expect(masked.every((action) => action.model === 'llama3.2:3b')).toBe(true);
-		expect(masked.map((action) => action.path).sort()).toEqual(['vector', 'vectorless']);
+		expect(masked.map((action) => action.path).sort()).toEqual(['hybrid', 'vector', 'vectorless']);
 	});
 
 	it('falls back to the full model set when nothing is reported healthy', () => {
-		expect(maskActions({ pinnedPath: null, availableModels: [] })).toHaveLength(4);
+		expect(maskActions({ pinnedPath: null, availableModels: [] })).toHaveLength(6);
 	});
 
 	it('round-trips an action through its canonical key', () => {
@@ -294,9 +294,9 @@ describe.skipIf(!hasPostgres)('epsilon-greedy bandit', () => {
 			expect(arm?.pulls).toBe(1);
 		});
 
-		it('initialises the full 3-state × 4-arm table', async () => {
+		it('initialises the full 3-state × 6-arm table', async () => {
 			const bandit = await freshBandit();
-			expect(await bandit.snapshot()).toHaveLength(12);
+			expect(await bandit.snapshot()).toHaveLength(18);
 		});
 	});
 });

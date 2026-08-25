@@ -5,6 +5,7 @@ export type StrategyName =
 	| 'routed'
 	| 'always_vector'
 	| 'always_vectorless'
+	| 'always_hybrid'
 	| 'random'
 	| 'adversarial_gated'
 	| 'adversarial_ungated';
@@ -46,6 +47,16 @@ export const STRATEGIES: Strategy[] = [
 		label: 'Always vectorless',
 		description: 'Every query treated as a keyword or record lookup.',
 		choosePath: () => 'vectorless',
+		fallback: false,
+		gate: true,
+		behaviour: 'faithful'
+	},
+	{
+		name: 'always_hybrid',
+		label: 'Always fused',
+		description:
+			'Every query through the fused path: exact anchors, lexical and dense over one unit set, rank-fused, then expanded along the graph. Shows what routing is still worth once one path covers everything.',
+		choosePath: () => 'hybrid',
 		fallback: false,
 		gate: true,
 		behaviour: 'faithful'

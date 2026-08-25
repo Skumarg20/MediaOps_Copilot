@@ -20,6 +20,27 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  neo4j:
+    image: neo4j:5-community
+    container_name: mediaops-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/copilotgraph
+      NEO4J_PLUGINS: '["graph-data-science"]'
+      NEO4J_dbms_security_procedures_unrestricted: gds.*
+      NEO4J_dbms_security_procedures_allowlist: gds.*
+    ports:
+      - '7474:7474'
+      - '7687:7687'
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
   ollama:
     image: ollama/ollama:latest
     container_name: mediaops-ollama
@@ -99,3 +120,4 @@ services:
 volumes:
   postgres-data:
   ollama-models:
+  neo4j-data:

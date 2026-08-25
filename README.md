@@ -19,6 +19,7 @@ Everything needed to run, test, and operate the system. Start here.
 | npm | >= 10 | ships with Node 20/22 |
 | Docker + Compose v2 | >= 24 | `docker compose version` |
 | Postgres | 16 | only if running it natively instead of via compose |
+| Neo4j | 5 + Graph Data Science | the graph store; ships in compose as `neo4j` |
 | Python | >= 3.10 | **optional** - only for the reference ML trainer |
 
 Full list, including model weights and ports: [`requirements.txt`](./requirements.txt).
@@ -48,9 +49,14 @@ docker compose up --build
 
 - **Console** -> http://localhost:3000 (set `WEB_PORT=3001` if 3000 is taken)
 - **API** -> http://localhost:8080
+- **Neo4j browser** -> http://localhost:7474 (`neo4j` / `copilotgraph`)
 
 Migrations run automatically from the API container's entrypoint, retrying while
-Postgres comes up.
+Postgres comes up. Load the graph once the stack is up:
+
+```bash
+npm run graph:sync --workspace=apps/api
+```
 
 **On Windows PowerShell**, use this instead of `echo ... > .env`. PowerShell's `>` is
 `Out-File`, which encodes text rather than writing raw bytes — Windows PowerShell 5.1
@@ -97,8 +103,9 @@ npm install
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 
-docker compose up -d postgres      # or point .env at any Postgres
+docker compose up -d postgres neo4j   # or point .env at your own
 npm run migrate
+npm run graph:sync --workspace=apps/api   # load the 7 domains into Neo4j
 
 npm run dev:api                    # http://localhost:8080
 npm run dev:web                    # http://localhost:3000
@@ -110,8 +117,8 @@ npm run dev:web                    # http://localhost:3000
 docker compose up -d postgres
 createdb -h localhost -U copilot mediaops_test    # or set TEST_DB_DATABASE
 
-npm test                                  # everything - 252 tests
-npm run test --workspace=apps/api         # 234 tests
+npm test                                  # everything - 218 tests
+npm run test --workspace=apps/api         # 200 tests
 npm run test --workspace=apps/web         #  18 tests
 npm run test --workspace=apps/api -- test/bandit.test.ts    # one suite
 ```
@@ -191,7 +198,9 @@ Then click **Helpful / Unhelpful** in the console and watch the RL panel move.
 | `npm run migrate` / `migrate:rollback` / `migrate:make` | Schema |
 | `npm run ml:dataset` / `ml:train` / `ml:train:python` | Classifier |
 | `npm run eval` | Golden-set evaluation → `ml/eval_report.md` (needs Postgres) |
-| `npm run eval:architectures --workspace=apps/api` | Nine retrieval architectures compared → `ml/algorithm_comparison.md`. Offline: no database, no model runtime, no API keys |
+| `npm run eval:architectures --workspace=apps/api` | Nine retrieval architectures compared → `ml/algorithm_comparison.md`. Needs Neo4j + `graph:sync`; no model runtime, no API keys |
+| `npm run graph:sync --workspace=apps/api` | Load every domain into Neo4j |
+| `npm run graph:verify --workspace=apps/api` | Check the Cypher/GDS operators against known answers |
 | `docker compose up --build` | Whole system |
 | `docker compose --profile telemetry up otel-collector` | OTLP collector |
 | `docker compose exec ollama ollama pull <model>` | Model weights |
@@ -220,16 +229,29 @@ Browser ── Next.js console ──► Hono API ──► generation: OpenRout
                                    ├──────────────────► embeddings: Ollama (nomic-embed-text)
                                    │
                                    ├─► in-process vector index (chunks + embeddings)
-                                   └─► Postgres
-                                         platform.*  jobs · error codes      (reference, re-seeded)
-                                         copilot.*   transactions · feedback ·
-                                                     bandit arms · citations (learned, never rebuilt)
+                                   │
+                                   ├─► Postgres                    ── source of truth ──
+                                   │     platform.*  jobs · error codes      (reference, re-seeded)
+                                   │     copilot.*   transactions · feedback ·
+                                   │                 bandit arms · citations (learned, never rebuilt)
+                                   │
+                                   └─► Neo4j 5 + GDS               ── derived index ──
+                                         :Entity nodes, one label per type
+                                         typed edges carrying validFrom / validTo
+                                         traversal in Cypher, algorithms in GDS
 ```
 
 One API process hosts every plane, but each is a module behind an interface —
 `Retriever`, `Policy`, `Grounder`, `Classifier` — so any one can move out of process
 without a rewrite. At ~50 chunks, a vector database would add a container and a failure
-mode for zero accuracy gain.
+mode for zero accuracy gain — the embeddings stay in process.
+
+**Two stores, two jobs.** Postgres holds the records and everything learned. Neo4j holds
+the *graph derived from them*, in the same relationship the vector index has to the
+corpus: `Neo4jGraph.sync()` reads the rows out of Postgres, pairs them with the chunked
+runbooks, and writes nodes and typed edges in. Traversal, degree, complement, temporal
+filtering and the three centrality algorithms are then Cypher and GDS rather than code in
+this repository.
 
 The two Postgres schemas are not tidiness. `platform` holds reference data derived from
 the repo and re-seeded on every boot; `copilot` holds learned state that must never be
@@ -314,7 +336,7 @@ the fourth is **computation** the agent invokes on top of whichever path ran.
 | `vectorless` | "what is this record / what does this code mean" | 20 records | exact key, then BM25 | no model call | `retrieval/services/vectorless.ts` |
 | `vector` | "explain / why / how should I" | ~34 prose chunks | cosine over embeddings | one embed call — **hard dependency** | `retrieval/services/vector.ts` |
 | `hybrid` | "how do I fix X" and anything structural | all 68 nodes: records, chunks and entities | all three, rank-fused, then traversed | one embed call, skipped if unavailable | `retrieval/services/hybrid.ts` |
-| operators | "how many / which have none / rank by / what if" | the graph itself | typed graph algorithms | no model call, in-memory | `graph/services/{primitives,computation}.ts` |
+| operators | "how many / which have none / rank by / what if" | the graph itself | Cypher + Neo4j GDS | no model call | `graph/services/operators.ts` |
 
 The first three implement one interface:
 
@@ -332,9 +354,37 @@ so the pipeline, the eval harness and the bandit never learn which one they are 
 
 ### The shared substrate: the knowledge graph
 
-Everything except `vector` reads the same object. `modules/graph/` builds a **typed,
-timestamped, directed multigraph** from rows that already exist — no LLM extraction,
-because the entities are already typed and extraction would only add noise.
+Everything except `vector` reads the same object: a **typed, timestamped, directed
+multigraph** built from rows that already exist — no LLM extraction, because the entities
+are already typed and extraction would only add noise.
+
+It is stored in **Neo4j**, run from a Docker image alongside Postgres:
+
+```bash
+docker compose up -d neo4j                        # bolt :7687, browser :7474
+npm run graph:sync   --workspace=apps/api         # load every domain
+npm run graph:verify --workspace=apps/api         # 15 checks against known answers
+```
+
+Traversal and the graph algorithms are **Cypher and the Graph Data Science library**, not
+hand-written code:
+
+| Operator | Implementation |
+|---|---|
+| `shortest_path` | Cypher `shortestPath()` with edge-type and validity filters |
+| `subgraph`, `get_neighbors` | variable-length `-[*1..N]-` patterns |
+| `count_edges`, `aggregate_over_type` | `count` / `collect` with `ORDER BY` |
+| `set_complement` | `WHERE NOT n.id IN $exclude` |
+| `filter_edges_by_date`, `asOf` | `WHERE r.validFrom <= $asOf AND r.validTo > $asOf` |
+| `simulate_removal` | subquery counting surviving links of the same type |
+| `betweenness` | `gds.betweenness.stream` |
+| `pagerank` | `gds.pageRank.stream` |
+| `connected_components` | `gds.wcc.stream` |
+
+Centrality and component queries project the subgraph **induced by the type asked about**
+(`gds.graph.project` over `:Hub`-to-`:Hub` lanes, `:Account`-to-`:Account` counterparties),
+so "which hub is the bottleneck" is a question about the lane network rather than about
+whatever shipment happens to touch two hubs.
 
 ```
                         ┌────────────┐
@@ -691,6 +741,10 @@ run the system.
 | `GRAPH_EXPANSION_DISCOUNT` | 0.9 | Penalty on anything reached by traversal |
 | `GRAPH_DOC_LINK_FLOOR` | 0.34 | Term overlap for an inferred documentation edge |
 | `AGENT_MAX_STEPS` | 5 | ReAct budget |
+| `NEO4J_URL` | `bolt://localhost:7687` | Graph store |
+| `NEO4J_USER` / `NEO4J_PASSWORD` | `neo4j` / `copilotgraph` | Matches the compose service |
+| `NEO4J_DATABASE` | `neo4j` | Database name |
+| `NEO4J_POOL_SIZE` / `NEO4J_TIMEOUT_MS` | 20 / 15000 | Driver pool and acquisition timeout |
 
 
 ## Reinforcement learning
@@ -804,8 +858,8 @@ Nine architectures over **seven domains**, offline and deterministic. Full analy
 | Standard RAG (lexical top-K) | 22 | 0.233 | 0.182 |
 | Dense-embedding RAG | 11 | 0.104 | 0.139 |
 | Hybrid lexical + dense (RRF) | 13 | 0.134 | 0.202 |
-| Deterministic GraphRAG (bespoke handlers) | 28 | 0.233 | **0.399** |
-| Agentic RAG (ReAct, 6 steps) | 43 | 0.233 | 0.131 |
+| Deterministic GraphRAG (bespoke handlers) | 28 | 0.233 | **0.351** |
+| Agentic RAG (ReAct, 6 steps) | 42 | 0.234 | 0.127 |
 | Query planner, 9 traversal primitives | 62 | 0.514 | 0.194 |
 | Adaptive planner, 15 operators | 76 | 0.575 | 0.231 |
 | Hybrid fused + graph expansion | 25 | 0.279 | 0.152 |
@@ -1034,6 +1088,8 @@ inspectable from outside.
 { "status": "ok",                     // ok | degraded | down
   "checks": {
     "postgres":          { "name": "postgres", "status": "up" },
+    "neo4j":             { "name": "neo4j", "status": "up",
+                           "detail": "bolt://localhost:7687" },
     "vector_index":      { "name": "vector_index", "status": "up",
                            "detail": "34 chunks indexed" },
     "vectorless_index":  { "name": "vectorless_index", "status": "up",
@@ -1106,7 +1162,7 @@ format error, so a hallucinated tool name costs a step rather than doing somethi
 |---|---|---|
 | `check_job_status(id)` | no | Reads the live job record |
 | `restart_render(id)` | **yes** | **Mock** — records intent, mutates nothing |
-| 15 graph operators | no | Read-only computation over the in-memory graph |
+| 15 graph operators | no | Read-only Cypher and GDS over Neo4j |
 
 The split that matters here is **read versus write**, not traversal versus computation.
 Only one tool in the whole space is mutating, and it is a mock.
@@ -1302,6 +1358,7 @@ crash, never guess.**
 | Retrieval below floor | Abstain + escalation hint, penalty applied | Amber "I don't know" row |
 | Phantom citation | Answer replaced by abstention | Explanation naming the invalid citation |
 | Agent budget exhausted | Abstain rather than force an answer | Rationale states the budget |
+| Neo4j unavailable | Structural questions abstain; `vector` and `vectorless` keep serving | Health reports `neo4j: down` |
 | Postgres unavailable | `503` — nothing can be recorded or learned | Red pill |
 | Duplicate feedback | `409`, policy untouched | Button disabled after first click |
 | Body over 64 KB | `413` before the body is read into memory | — |
@@ -1331,9 +1388,8 @@ worse than a red one.
 | `api` | 34 | Route contracts; 400/404/409/413; the rationale shape the console destructures; jsonb round-trip fidelity; **model down → 200 + `degraded`**; empty index → forced vectorless; reward series ordering; the tRPC surface |
 | `bandit` | 25 | Reward arithmetic incl. negatives; incremental-mean correctness; **rated-pull vs pull division**; ε=0 exploits, ε=1 explores; optimistic init sweeps every arm; masking survives ε=1; per-state independence; persistence across restarts |
 | `retrieval` | 25 | Both canonical examples; both BM25 floors; anchor resolution; hard-rule ordering |
-| `graph` | 27 | Typed graph invariants; temporal edge validity; all 15 operators; operator-call parsing; the same operators over a second, unrelated domain |
-| `hybrid` | 16 | RRF rank-only fusion; MMR diversification; graph expansion and hop provenance; degraded-embedder coverage; OOD abstention; structural routing |
-| `domains` | 38 | Every registered domain builds cleanly; no undeclared edge types; every benchmark answer key still resolves; the aerospace reconstruction's published figures; typed centrality and component detection |
+| `hybrid` | 16 | RRF rank-only fusion; MMR diversification; graph expansion and hop provenance; degraded-embedder coverage; OOD abstention; structural routing. Retriever cases gated on Neo4j |
+| `domains` | 31 | Every registered domain builds cleanly; no undeclared edge types; **every benchmark answer key still resolves**; the aerospace reconstruction figures; GDS centrality and component detection. Gated on Neo4j |
 | `grounding` | 20 | Phantom citation → abstain; High/Medium banding; overlap cannot be inflated by repetition |
 | `agent` | 18 | ReAct parsing; multi-line answers; tool whitelist; step budget; prompt-injection containment |
 | `classifier` | 13 | Feature contract; per-class prediction; signed attributions |

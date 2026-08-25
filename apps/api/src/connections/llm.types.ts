@@ -1,37 +1,43 @@
 import type { DependencyStatus, ModelArm } from '@/types.js';
 
 export type GenerateRequest = {
-  model: ModelArm;
-  system: string;
-  prompt: string;
-  temperature?: number;
-  stop?: string[];
+	model: ModelArm;
+	system: string;
+	prompt: string;
+	temperature?: number;
+	stop?: string[];
 };
 
 export type GenerateResult = {
-  text: string;
-  model: ModelArm;
-  latencyMs: number;
+	text: string;
+	model: ModelArm;
+	latencyMs: number;
 };
 
 export type EmbedOptions = {
-  /** Overrides the adapter default. Used by corpus indexing, which tolerates a cold model load. */
-  timeoutMs?: number;
+	timeoutMs?: number;
 };
 
-export interface LlmAdapter {
-  generate(req: GenerateRequest): Promise<GenerateResult>;
-  embed(texts: string[], opts?: EmbedOptions): Promise<number[][]>;
-  availableModels(): Promise<Set<string>>;
-  health(): Promise<{ generation: DependencyStatus; embedding: DependencyStatus }>;
+
+export interface Generator {
+	generate(req: GenerateRequest): Promise<GenerateResult>;
+	availableModels(): Promise<Set<string>>;
+	generationHealth(): Promise<DependencyStatus>;
 }
 
+export interface Embedder {
+	embed(texts: string[], opts?: EmbedOptions): Promise<number[][]>;
+	embeddingHealth(): Promise<DependencyStatus>;
+}
+
+export type LlmAdapter = Generator & Embedder;
+
 export class LlmUnavailableError extends Error {
-  constructor(
-    message: string,
-    override readonly cause?: unknown,
-  ) {
-    super(message);
-    this.name = 'LlmUnavailableError';
-  }
+	constructor(
+		message: string,
+		override readonly cause?: unknown
+	) {
+		super(message);
+		this.name = 'LlmUnavailableError';
+	}
 }

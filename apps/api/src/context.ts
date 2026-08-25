@@ -1,17 +1,21 @@
 import { config } from '@/config.js';
-import { createLlmAdapter, type LlmAdapter } from '@/connections/index.js';
+import { createLlm, type Embedder, type Generator, type LlmAdapter } from '@/connections/index.js';
 import { triageClassifier } from '@/modules/classifier/index.js';
+import { loadMediaOpsGraph, type Neo4jGraph } from '@/modules/graph/index.js';
 import { grounder } from '@/modules/grounding/index.js';
 import { platformService } from '@/modules/platform/index.js';
 import { EpsilonGreedyBandit, type BanditOptions } from '@/modules/rl/index.js';
-import { VectorRetriever, VectorlessRetriever } from '@/modules/retrieval/index.js';
+import { HybridRetriever, VectorRetriever, VectorlessRetriever } from '@/modules/retrieval/index.js';
 import { logEvent, logger } from '@/utils/index.js';
 import type { Classifier, Grounder, Policy } from '@/types.js';
 
 export interface AppContext {
-	llm: LlmAdapter;
+	generator: Generator;
+	embedder: Embedder;
 	vector: VectorRetriever;
 	vectorless: VectorlessRetriever;
+	hybrid: HybridRetriever;
+	graph: Neo4jGraph;
 	bandit: Policy;
 	classifier: Classifier;
 	grounder: Grounder;
@@ -39,7 +43,6 @@ function retryVectorIndex(vector: VectorRetriever, attempt = 0): void {
 		return;
 	}
 
-	// Unref so a pending retry never holds the process (or a test run) open.
 	setTimeout(() => {
 		void (async () => {
 			const result = await vector.build();
@@ -60,16 +63,22 @@ function retryVectorIndex(vector: VectorRetriever, attempt = 0): void {
 export async function buildContext(opts: BuildContextOptions = {}): Promise<AppContext> {
 	if (!opts.skipSeed) await platformService.seedReferenceData();
 
-	const llm = opts.llm ?? createLlmAdapter();
-	const vector = new VectorRetriever(llm, opts.docsDir ?? config.docsDir);
+	const { generator, embedder } = opts.llm ? { generator: opts.llm, embedder: opts.llm } : createLlm();
+	const vector = new VectorRetriever(embedder, opts.docsDir ?? config.docsDir);
 	const vectorless = new VectorlessRetriever();
 	const records = await vectorless.build();
+
+	const graph = await loadMediaOpsGraph({
+		...(opts.docsDir ? { docsDir: opts.docsDir } : {}),
+		linkOverlapFloor: config.retrieval.docLinkFloor
+	});
+	const hybrid = new HybridRetriever(embedder);
 
 	const bandit = new EpsilonGreedyBandit(opts.bandit);
 	await bandit.init();
 
 	if (!opts.skipIndex) {
-		const vectorIndexResult = await vector.build();
+		const [vectorIndexResult] = await Promise.all([vector.build(), hybrid.build(graph)]);
 		if (vectorIndexResult.error) {
 			logEvent(logger, 'warn', 'boot.indexed', {
 				error: vectorIndexResult.error,
@@ -77,17 +86,24 @@ export async function buildContext(opts: BuildContextOptions = {}): Promise<AppC
 			});
 			retryVectorIndex(vector);
 		}
+	} else {
+		await hybrid.build(graph);
 	}
 
 	logEvent(logger, 'info', 'boot.seeded', {
 		vectorless_records: records,
-		vector_chunks: vector.size
+		vector_chunks: vector.size,
+		graph_nodes: graph.nodeCount,
+		graph_edges: graph.edgeCount
 	});
 
 	context = {
-		llm,
+		generator,
+		embedder,
 		vector,
 		vectorless,
+		hybrid,
+		graph,
 		bandit,
 		classifier: triageClassifier,
 		grounder,

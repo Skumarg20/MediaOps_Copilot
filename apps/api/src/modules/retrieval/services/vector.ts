@@ -4,7 +4,7 @@ import { config } from '@/config.js';
 import { logEvent, logger } from '@/utils/index.js';
 import { recordDependency, retrievalHits } from '@/utils/index.js';
 import type { DependencyStatus, Evidence, QueryContext, Retriever } from '@/types.js';
-import type { LlmAdapter } from '@/connections/index.js';
+import type { Embedder } from '@/connections/index.js';
 import { tokenize } from './bm25.js';
 import { chunkMarkdown, type Chunk } from './chunker.js';
 
@@ -43,7 +43,7 @@ export class VectorRetriever implements Retriever {
   private lastError: string | null = null;
 
   constructor(
-    private readonly llm: LlmAdapter,
+    private readonly embedder: Embedder,
     private readonly docsDir: string = config.docsDir,
   ) {}
 
@@ -60,7 +60,7 @@ export class VectorRetriever implements Retriever {
     }
 
     try {
-      const vectors = await this.llm.embed(chunks.map((c) => c.text), {
+      const vectors = await this.embedder.embed(chunks.map((c) => c.text), {
         timeoutMs: config.ollama.indexTimeoutMs,
       });
       this.index = chunks.map((c, i) => ({ ...c, vector: vectors[i] ?? [] }));
@@ -87,7 +87,7 @@ export class VectorRetriever implements Retriever {
 
     let queryVector: number[];
     try {
-      const [vec] = await this.llm.embed([query]);
+      const [vec] = await this.embedder.embed([query]);
       if (!vec) throw new Error('empty query embedding');
       queryVector = vec;
     } catch (err) {

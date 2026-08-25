@@ -1,5 +1,6 @@
 import { config } from '@/config.js';
 import { pingDb } from '@/connections/index.js';
+import { neo4jHealth } from '@/connections/neo4j.js';
 import { getContext } from '@/context.js';
 import { recordDependency } from '@/utils/index.js';
 import type { DependencyStatus } from '@/types.js';
@@ -19,18 +20,25 @@ export async function checkHealth(): Promise<HealthReport> {
 	checks.postgres = dbOk
 		? { name: 'postgres', status: 'up' }
 		: { name: 'postgres', status: 'down', detail: 'select 1 failed' };
-	recordDependency('postgres', checks.postgres.status);
 
-	const [vector, vectorless, llm] = await Promise.all([
+	const [vector, vectorless, hybrid, neo4j, generation, embedding] = await Promise.all([
 		ctx.vector.health(),
 		ctx.vectorless.health(),
-		ctx.llm.health()
+		ctx.hybrid.health(),
+		neo4jHealth(),
+		ctx.generator.generationHealth(),
+		ctx.embedder.embeddingHealth()
 	]);
+
+	checks.neo4j = neo4j;
 
 	checks.vector_index = vector;
 	checks.vectorless_index = vectorless;
-	checks.ollama_generation = llm.generation;
-	checks.ollama_embedding = llm.embedding;
+	checks.hybrid_index = hybrid;
+	checks.ollama_generation = generation;
+	checks.ollama_embedding = embedding;
+
+	for (const check of Object.values(checks)) recordDependency(check.name, check.status);
 
 	const values = Object.values(checks);
 	const status: HealthReport['status'] = values.some((check) => check.status === 'down')

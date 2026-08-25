@@ -1,8 +1,3 @@
-
-/**
- * Reference data: the render platform's own records, mocked. Rebuildable from
- * the repo's fixtures, so an operator can truncate and re-seed these safely.
- */
 export async function up(knex) {
 	await knex.schema.withSchema('platform').createTable('job', (table) => {
 		table.text('id').primary();

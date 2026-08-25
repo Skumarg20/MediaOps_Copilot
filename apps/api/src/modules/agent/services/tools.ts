@@ -1,19 +1,27 @@
-import type { Knex } from 'knex';
-import { db } from '@/connections/index.js';
+import { db, type DbOptions } from '@/connections/index.js';
+import {
+	OPERATORS,
+	parseOperatorCall,
+	type Neo4jGraph,
+	type OperatorResult,
+	type OperatorSpec
+} from '@/modules/graph/index.js';
 import { platformService } from '@/modules/platform/index.js';
 import { logEvent, type Logger } from '@/utils/index.js';
 import type { Evidence } from '@/types.js';
 
-export type ToolName = 'check_job_status' | 'restart_render';
+export type ToolName = string;
 
 export interface ToolResult {
 	evidence: Evidence;
+	extraEvidence?: Evidence[];
 	observation: string;
 }
 
 export interface ToolContext {
 	log: Logger;
 	transactionId: string;
+	graph?: Neo4jGraph | null;
 }
 
 export interface Tool {
@@ -23,7 +31,7 @@ export interface Tool {
 	run(arg: string, ctx: ToolContext): Promise<ToolResult>;
 }
 
-export const TOOLS: Record<ToolName, Tool> = {
+const PLATFORM_TOOLS: Record<string, Tool> = {
 	check_job_status: {
 		name: 'check_job_status',
 		description: 'Read the current record for a job id. Read-only.',
@@ -91,10 +99,131 @@ export const TOOLS: Record<ToolName, Tool> = {
 	}
 };
 
-export const TOOL_NAMES = Object.keys(TOOLS) as ToolName[];
+const MAX_OPERATOR_ENTITIES = 6;
 
-export function isToolName(value: string): value is ToolName {
+async function operatorEvidence(spec: OperatorSpec, rawArgs: string, result: OperatorResult, graph: Neo4jGraph): Promise<ToolResult> {
+	const id = `graph:${spec.name}(${rawArgs.replace(/\s+/g, ' ').trim()})`;
+
+	const rowLines = result.rows
+		.slice(0, 12)
+		.map((row) =>
+			Object.entries(row)
+				.map(([key, value]) => `${key}=${String(value)}`)
+				.join(' ')
+		)
+		.join('\n');
+
+	const text = [
+		result.summary,
+		rowLines ? `\nRows:\n${rowLines}` : '',
+		result.provenance.length > 0 ? `\nPaths:\n${result.provenance.slice(0, 6).join('\n')}` : ''
+	]
+		.filter(Boolean)
+		.join('');
+
+	const resolved = await Promise.all(result.nodeIds.slice(0, MAX_OPERATOR_ENTITIES).map((nodeId) => graph.node(nodeId)));
+	const extraEvidence: Evidence[] = resolved
+		.filter((node): node is NonNullable<typeof node> => node !== undefined)
+		.map((node) => ({
+			id: node.id,
+			source: 'hybrid' as const,
+			text: node.text,
+			meta: { kind: node.type, label: node.label, ...node.attrs, viaOperator: spec.name }
+		}));
+
+	return {
+		observation: result.summary,
+		evidence: {
+			id,
+			source: 'tool',
+			text,
+			meta: {
+				tool: spec.name,
+				tier: spec.tier,
+				operator: result.operator,
+				matched: result.nodeIds.length,
+				nodeIds: result.nodeIds.slice(0, 24)
+			}
+		},
+		extraEvidence
+	};
+}
+
+function makeGraphTool(spec: OperatorSpec): Tool {
+	return {
+		name: spec.name,
+		description: spec.description,
+		mutating: false,
+		async run(rawArgs, ctx) {
+			const graph = ctx.graph;
+			if (!graph) {
+				const observation = `The ${spec.name} operator needs a knowledge graph and none is loaded.`;
+				return {
+					observation,
+					evidence: {
+						id: `graph:${spec.name}(unavailable)`,
+						source: 'tool',
+						text: observation,
+						meta: { tool: spec.name, available: false }
+					}
+				};
+			}
+
+			const parsed = parseOperatorCall(`${spec.name}(${rawArgs})`);
+			const args = parsed?.args ?? {};
+			const missing = spec.params.filter((param) => param.required && args[param.name] === undefined);
+
+			if (missing.length > 0) {
+				const observation =
+					`${spec.name} needs ${missing.map((param) => param.name).join(' and ')}. ` +
+					`Call it as ${spec.name}(${spec.params.map((param) => param.name).join(', ')}).`;
+				return {
+					observation,
+					evidence: {
+						id: `graph:${spec.name}(invalid)`,
+						source: 'tool',
+						text: observation,
+						meta: { tool: spec.name, error: 'missing_arguments' }
+					}
+				};
+			}
+
+			return operatorEvidence(spec, rawArgs, await spec.run(graph, args), graph);
+		}
+	};
+}
+
+export const GRAPH_TOOLS: Record<string, Tool> = Object.fromEntries(
+	OPERATORS.map((spec) => [spec.name, makeGraphTool(spec)])
+);
+
+export const TOOLS: Record<string, Tool> = { ...PLATFORM_TOOLS, ...GRAPH_TOOLS };
+
+export const TOOL_NAMES = Object.keys(TOOLS);
+export const PLATFORM_TOOL_NAMES = Object.keys(PLATFORM_TOOLS);
+export const GRAPH_TOOL_NAMES = Object.keys(GRAPH_TOOLS);
+
+export function isToolName(value: string): boolean {
 	return value in TOOLS;
+}
+
+const PLATFORM_SIGNATURES: Record<string, string> = {
+	check_job_status: 'check_job_status(job_id)',
+	restart_render: 'restart_render(job_id)'
+};
+
+export function describeTools(includeGraph: boolean): string {
+	const lines = Object.values(PLATFORM_TOOLS).map(
+		(tool) => `- ${PLATFORM_SIGNATURES[tool.name] ?? `${tool.name}(arg)`} — ${tool.description}`
+	);
+
+	if (includeGraph) {
+		for (const spec of OPERATORS) {
+			lines.push(`- ${spec.name}(${spec.params.map((param) => param.name).join(', ')}) — ${spec.description}`);
+		}
+	}
+
+	return lines.join('\n');
 }
 
 export async function recordInvocation(
@@ -104,9 +233,9 @@ export async function recordInvocation(
 		args,
 		simulated
 	}: { transactionId: string; tool: string; args: unknown; simulated: boolean },
-	trx: Knex = db
+	{ transaction = db }: DbOptions = {}
 ): Promise<void> {
-	await trx('copilot.toolInvocation').insert({
+	await transaction('copilot.toolInvocation').insert({
 		transactionId,
 		tool,
 		args: JSON.stringify(args),

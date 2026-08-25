@@ -1,10 +1,12 @@
 import { config } from '@/config.js';
-import { LlmUnavailableError, type LlmAdapter } from '@/connections/index.js';
+import { LlmUnavailableError, type Generator } from '@/connections/index.js';
+import { getContext } from '@/context.js';
+import type { Neo4jGraph } from '@/modules/graph/index.js';
 import { logEvent, type Logger } from '@/utils/index.js';
 import type { AgentResult, AgentStep, Evidence, ModelArm } from '@/types.js';
 import { groundingService } from '@/modules/grounding/index.js';
 import { buildPrompt, SYSTEM_PROMPT, templateAnswerFromEvidence } from './prompts.js';
-import { isToolName, recordInvocation, TOOL_NAMES, TOOLS } from './tools.js';
+import { describeTools, isToolName, PLATFORM_TOOL_NAMES, recordInvocation, TOOL_NAMES, TOOLS } from './tools.js';
 
 export type ParsedTurn = {
   thought: string;
@@ -31,10 +33,10 @@ export function parseTurn(raw: string): ParsedTurn {
   );
   const answer = (answerMatch?.[1] ?? '').trim();
 
-  const toolMatch = /^([a-z_]+)\s*\(\s*['"]?([^'")]*)['"]?\s*\)/i.exec(action);
+  const toolMatch = /^([a-z_]+)\s*\(([\s\S]*)\)\s*$/i.exec(action);
   const parsedToolCall =
     toolMatch && isToolName(toolMatch[1] ?? '')
-      ? { name: toolMatch[1] as string, arg: (toolMatch[2] ?? '').trim() }
+      ? { name: toolMatch[1] as string, arg: (toolMatch[2] ?? '').trim().replace(/^['"]|['"]$/g, '') }
       : null;
 
   const answersOutright = answer.length > 0;
@@ -53,12 +55,22 @@ export function parseTurn(raw: string): ParsedTurn {
 }
 
 export type ReactOptions = {
-  llm: LlmAdapter;
+  llm: Generator;
   log: Logger;
   transactionId: string;
   model: ModelArm;
   maxSteps?: number;
+  graph?: Neo4jGraph | null;
 };
+
+function resolveGraph(explicit: Neo4jGraph | null | undefined): Neo4jGraph | null {
+  if (explicit !== undefined) return explicit;
+  try {
+    return getContext().graph;
+  } catch {
+    return null;
+  }
+}
 
 export async function runReactLoop(
   query: string,
@@ -66,6 +78,7 @@ export async function runReactLoop(
   opts: ReactOptions,
 ): Promise<AgentResult> {
   const maxSteps = opts.maxSteps ?? config.agent.maxSteps;
+  const graph = resolveGraph(opts.graph);
   const evidence = [...initialEvidence];
   const steps: AgentStep[] = [];
   const history: string[] = [];
@@ -76,7 +89,13 @@ export async function runReactLoop(
       const result = await opts.llm.generate({
         model: opts.model,
         system: SYSTEM_PROMPT,
-        prompt: buildPrompt({ query, evidence, history, availableTools: TOOL_NAMES }),
+        prompt: buildPrompt({
+          query,
+          evidence,
+          history,
+          availableTools: graph ? TOOL_NAMES : PLATFORM_TOOL_NAMES,
+          toolCatalogue: describeTools(graph !== null),
+        }),
       });
       raw = result.text;
     } catch (err) {
@@ -102,8 +121,8 @@ export async function runReactLoop(
       thought_len: turn.thought.length,
     });
 
-    if (turn.toolCall) {
-      const tool = TOOLS[turn.toolCall.name as keyof typeof TOOLS];
+    const tool = turn.toolCall ? TOOLS[turn.toolCall.name] : undefined;
+    if (turn.toolCall && tool) {
       logEvent(opts.log, 'info', 'tool.invoked', {
         tool: tool.name,
         arg: turn.toolCall.arg,
@@ -118,10 +137,14 @@ export async function runReactLoop(
 
       const result = await tool.run(turn.toolCall.arg, {
         log: opts.log,
-        transactionId: opts.transactionId
+        transactionId: opts.transactionId,
+        graph
       });
 
       if (!evidence.some((e) => e.id === result.evidence.id)) evidence.push(result.evidence);
+      for (const extra of result.extraEvidence ?? []) {
+        if (!evidence.some((e) => e.id === extra.id)) evidence.push(extra);
+      }
 
       steps.push({ step, thought: turn.thought, action: turn.action, observation: result.observation });
       history.push(

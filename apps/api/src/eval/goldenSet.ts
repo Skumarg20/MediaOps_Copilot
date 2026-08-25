@@ -314,5 +314,77 @@ export const GOLDEN_SET: GoldenCase[] = [
 		expectedPath: 'any',
 		shouldAnswer: false,
 		note: 'No such record.'
+	},
+
+	{
+		id: 'struct-worker-most-failures',
+		query: 'which worker is causing the most failures',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		note: 'Aggregation over every job grouped by worker. top-K cannot count, it can only sample.'
+	},
+	{
+		id: 'struct-same-reason-as-482',
+		query: 'which other jobs failed for the same reason as job 482',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		note: 'Job to error code and back out to every other job — the reverse of the one hop the record path had.'
+	},
+	{
+		id: 'struct-codes-without-runbook',
+		query: 'which error codes have no runbook coverage',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		note: 'A set complement. Similarity search can only return the codes that DO match something.'
+	},
+	{
+		id: 'struct-fix-job-482',
+		query: 'how do I fix job 482',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		mustCite: ['job:482'],
+		note: 'Must reach the record, the error code and the runbook section. Record lookup alone stops at the first two.'
+	},
+	{
+		id: 'struct-compare-482-487',
+		query: 'is job 482 the same problem as job 487',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		note: 'Two subgraphs enumerated and compared. No single chunk contains a comparison.'
+	},
+	{
+		id: 'struct-jobs-after-window',
+		query: 'which jobs were queued after 11:00 on 2026-08-18',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		note: 'Timestamps were on the records all along; nothing was time-filterable until the graph carried them onto edges.'
+	},
+	{
+		id: 'struct-drain-worker-07',
+		query: 'if worker-07 is drained which jobs lose their only worker',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		note: 'Counterfactual: the answer is defined by what is absent after a hypothetical edit.'
+	},
+	{
+		id: 'struct-workers-single-failure',
+		query: 'which workers have failed exactly one job',
+		expectedPath: 'hybrid',
+		shouldAnswer: true,
+		note: 'Degree counting with a filter — the single-point-of-failure shape.'
+	},
+	{
+		id: 'struct-ood-aggregation',
+		query: 'which country has the most volcanoes',
+		expectedPath: 'any',
+		shouldAnswer: false,
+		note: 'Structural *shape* but entirely out of domain. Pinning to the fused path must not license an answer.'
+	},
+	{
+		id: 'struct-ood-complement',
+		query: 'which planets have no moons',
+		expectedPath: 'any',
+		shouldAnswer: false,
+		note: 'The abstention guard for structural routing: graph expansion must not manufacture evidence.'
 	}
 ];

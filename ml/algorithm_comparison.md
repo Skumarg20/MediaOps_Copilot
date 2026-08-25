@@ -1,6 +1,6 @@
 # Retrieval architecture comparison — generated results
 
-Generated 2026-08-25T11:46:17.930Z by `src/eval/runArchitectures.ts`. Deterministic and offline: no database, no model runtime, no API keys. Re-run with `npm run eval:architectures --workspace=apps/api`.
+Generated 2026-08-25T18:05:06.138Z by `src/eval/runArchitectures.ts`. Deterministic; the graph is read from Neo4j (no model runtime, no API keys). Sync it first with npm run graph:sync. Re-run with `npm run eval:architectures --workspace=apps/api`.
 
 **Scope.** This compares *retrieval architecture*, not end-to-end answer quality. Each row produces an entity set; no generation happens, so nothing here is confounded by which language model wrote the prose. The planner rows use a deterministic intent-to-operator planner rather than a live LLM, which removes tool-selection error and makes them an **upper bound** on what an LLM planner would achieve with the same vocabulary.
 
@@ -28,7 +28,7 @@ The headline of the multi-domain run: does an architecture hold up when the sche
 | Dense-embedding RAG | 1 | 3 | 1 | 1 | 1 | 3 | 1 | **11** |
 | Hybrid lexical + dense (RRF) | 3 | 2 | 1 | 2 | 1 | 3 | 1 | **13** |
 | Deterministic GraphRAG (bespoke handlers) | 10 | 2 | 3 | 3 | 4 | 4 | 2 | **28** |
-| Agentic RAG (ReAct, retrieval tools) | 6 | 7 | 6 | 5 | 7 | 5 | 7 | **43** |
+| Agentic RAG (ReAct, retrieval tools) | 6 | 7 | 6 | 5 | 6 | 5 | 7 | **42** |
 | Query planner, 9 traversal primitives | 9 | 9 | 9 | 9 | 8 | 8 | 10 | **62** |
 | Adaptive planner, 15 operators | 11 | 10 | 11 | 10 | 11 | 12 | 11 | **76** |
 | Hybrid fused + graph expansion (this repo, retrieval only) | 2 | 5 | 3 | 4 | 2 | 3 | 6 | **25** |
@@ -41,8 +41,8 @@ The headline of the multi-domain run: does an architecture hold up when the sche
 | Standard RAG (lexical top-K) | 0.361 | 0.183 | 0.216 | 0.263 | 0.357 | 0.203 | 0.179 | 0.182 |
 | Dense-embedding RAG | 0.194 | 0.131 | 0.093 | 0.103 | 0.057 | 0.185 | 0.054 | 0.139 |
 | Hybrid lexical + dense (RRF) | 0.293 | 0.107 | 0.093 | 0.126 | 0.199 | 0.185 | 0.090 | 0.202 |
-| Deterministic GraphRAG (bespoke handlers) | 0.579 | 0.183 | 0.216 | 0.263 | 0.357 | 0.203 | 0.179 | 0.399 |
-| Agentic RAG (ReAct, retrieval tools) | 0.272 | 0.241 | 0.172 | 0.229 | 0.303 | 0.187 | 0.264 | 0.131 |
+| Deterministic GraphRAG (bespoke handlers) | 0.531 | 0.183 | 0.216 | 0.263 | 0.357 | 0.203 | 0.179 | 0.351 |
+| Agentic RAG (ReAct, retrieval tools) | 0.268 | 0.241 | 0.177 | 0.229 | 0.304 | 0.182 | 0.271 | 0.127 |
 | Query planner, 9 traversal primitives | 0.454 | 0.525 | 0.493 | 0.490 | 0.594 | 0.400 | 0.579 | 0.194 |
 | Adaptive planner, 15 operators | 0.454 | 0.540 | 0.529 | 0.500 | 0.685 | 0.565 | 0.624 | 0.231 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | 0.267 | 0.367 | 0.219 | 0.247 | 0.296 | 0.215 | 0.328 | 0.152 |
@@ -54,15 +54,15 @@ The headline of the multi-domain run: does an architecture hold up when the sche
 
 | # | Architecture | Origin | Correct | Partial | Fail | Mean F1 | Mean recall | Orig. F1 | Hold-out F1 | Calls | ms |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| A1 | Standard RAG (lexical top-K) | paper | 22 | 19 | 42 | 0.252 | 0.367 | 0.361 | 0.233 | 0.0 | 0.151 |
-| A2 | Dense-embedding RAG | paper | 11 | 21 | 51 | 0.117 | 0.231 | 0.194 | 0.104 | 0.0 | 0.482 |
-| A3 | Hybrid lexical + dense (RRF) | vendor | 13 | 23 | 47 | 0.157 | 0.285 | 0.293 | 0.134 | 0.0 | 0.267 |
-| A4 | Deterministic GraphRAG (bespoke handlers) | paper | 28 | 15 | 40 | 0.283 | 0.416 | 0.579 | 0.233 | 0.1 | 0.244 |
-| A5 | Agentic RAG (ReAct, retrieval tools) | paper | 43 | 15 | 25 | 0.239 | 0.616 | 0.272 | 0.233 | 5.4 | 0.143 |
-| A6 | Query planner, 9 traversal primitives | paper | 62 | 11 | 10 | 0.505 | 0.807 | 0.454 | 0.514 | 2.6 | 1.889 |
-| A7 | Adaptive planner, 15 operators | paper | 76 | 1 | 6 | 0.557 | 0.918 | 0.454 | 0.575 | 1.5 | 2.068 |
-| A8 | Hybrid fused + graph expansion (this repo, retrieval only) | this repo | 25 | 24 | 34 | 0.278 | 0.431 | 0.267 | 0.279 | 0.0 | 1.691 |
-| A9 | Hybrid retrieval + operator vocabulary (this repo, production) | this repo | 81 | 2 | 0 | 0.440 | 0.986 | 0.384 | 0.450 | 1.5 | 4.000 |
+| A1 | Standard RAG (lexical top-K) | paper | 22 | 19 | 42 | 0.252 | 0.367 | 0.361 | 0.233 | 0.0 | 0.149 |
+| A2 | Dense-embedding RAG | paper | 11 | 21 | 51 | 0.117 | 0.231 | 0.194 | 0.104 | 0.0 | 0.515 |
+| A3 | Hybrid lexical + dense (RRF) | vendor | 13 | 23 | 47 | 0.157 | 0.285 | 0.293 | 0.134 | 0.0 | 0.328 |
+| A4 | Deterministic GraphRAG (bespoke handlers) | paper | 28 | 15 | 40 | 0.276 | 0.416 | 0.531 | 0.233 | 0.1 | 5.266 |
+| A5 | Agentic RAG (ReAct, retrieval tools) | paper | 42 | 16 | 25 | 0.239 | 0.613 | 0.268 | 0.234 | 5.4 | 34.847 |
+| A6 | Query planner, 9 traversal primitives | paper | 62 | 11 | 10 | 0.505 | 0.807 | 0.454 | 0.514 | 2.6 | 37.506 |
+| A7 | Adaptive planner, 15 operators | paper | 76 | 1 | 6 | 0.557 | 0.918 | 0.454 | 0.575 | 1.5 | 55.978 |
+| A8 | Hybrid fused + graph expansion (this repo, retrieval only) | this repo | 25 | 24 | 34 | 0.278 | 0.431 | 0.267 | 0.279 | 0.0 | 87.495 |
+| A9 | Hybrid retrieval + operator vocabulary (this repo, production) | this repo | 81 | 2 | 0 | 0.440 | 0.986 | 0.384 | 0.450 | 1.5 | 87.123 |
 
 Total queries: 83 (12 original, 71 hold-out).
 
@@ -118,7 +118,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | PARTIAL | 0.25 | 0.20 | 6 | job:482, runbook-job-lifecycle#c2, runbook-timeouts-and-retries#c4 | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 0.25 | 0.20 | 6 | errorCode:RENDER_TIMEOUT, runbook-job-lifecycle#c2, runbook-timeouts-and-retries#c4 | — |
 | Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 0.53 | 11 | (nothing) | 1 |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.33 | 20 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.31 | 22 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.30 | 23 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.30 | 23 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.75 | 0.60 | 6 | runbook-timeouts-and-retries#c4 | — |
@@ -160,7 +160,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | PARTIAL | 0.50 | 0.25 | 6 | job:483 | — |
 | Hybrid lexical + dense (RRF) | CORRECT | 1.00 | 0.50 | 6 | (nothing) | — |
 | Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 1.00 | 2 | (nothing) | 1 |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.24 | 15 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.21 | 17 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.31 | 11 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.31 | 11 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.50 | 0.25 | 6 | job:483 | — |
@@ -172,18 +172,18 @@ A category counts as handled only if **every** query in it is correct — worst 
 
 **Why it is here:** A set complement. Similarity search can only return codes that DO match something.
 
-**Ground truth (4 entities):** errorCode:RENDER_STALLED, errorCode:ASSET_UNSUPPORTED_CODEC, errorCode:WORKER_EVICTED, errorCode:FONT_MISSING
+**Ground truth (4 entities):** errorCode:ASSET_UNSUPPORTED_CODEC, errorCode:FONT_MISSING, errorCode:RENDER_STALLED, errorCode:WORKER_EVICTED
 
 | Architecture | Verdict | Recall | F1 | Returned | Missing | Operator calls |
 |---|---|---|---|---|---|---|
 | Standard RAG (lexical top-K) | PARTIAL | 0.50 | 0.40 | 6 | errorCode:RENDER_STALLED, errorCode:WORKER_EVICTED | — |
 | Dense-embedding RAG | PARTIAL | 0.50 | 0.40 | 6 | errorCode:RENDER_STALLED, errorCode:WORKER_EVICTED | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 0.50 | 0.40 | 6 | errorCode:RENDER_STALLED, errorCode:WORKER_EVICTED | — |
-| Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 1.00 | 4 | (nothing) | 1 |
+| Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 0.42 | 15 | (nothing) | 2 |
 | Agentic RAG (ReAct, retrieval tools) | PARTIAL | 0.50 | 0.27 | 11 | errorCode:RENDER_STALLED, errorCode:WORKER_EVICTED | 6 |
-| Query planner, 9 traversal primitives | PARTIAL | 0.75 | 0.60 | 6 | errorCode:FONT_MISSING | 6 |
+| Query planner, 9 traversal primitives | PARTIAL | 0.75 | 0.60 | 6 | errorCode:WORKER_EVICTED | 6 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.42 | 15 | (nothing) | 2 |
-| Hybrid fused + graph expansion (this repo, retrieval only) | FAIL | 0.00 | 0.00 | 3 | errorCode:RENDER_STALLED, errorCode:ASSET_UNSUPPORTED_CODEC, errorCode:WORKER_EVICTED, errorCode:FONT_MISSING | — |
+| Hybrid fused + graph expansion (this repo, retrieval only) | FAIL | 0.00 | 0.00 | 3 | errorCode:ASSET_UNSUPPORTED_CODEC, errorCode:FONT_MISSING, errorCode:RENDER_STALLED, errorCode:WORKER_EVICTED | — |
 | Hybrid retrieval + operator vocabulary (this repo, production) | CORRECT | 1.00 | 0.36 | 18 | (nothing) | 2 |
 
 ### M6 — degree — mediaops
@@ -464,7 +464,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | PARTIAL | 0.25 | 0.20 | 6 | product:PRD-01, product:PRD-05, factory:FAC-01 | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 0.75 | 0.60 | 6 | factory:FAC-01 | — |
 | Deterministic GraphRAG (bespoke handlers) | PARTIAL | 0.50 | 0.44 | 5 | factory:FAC-01, factory:FAC-04 | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.33 | 20 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.30 | 23 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.26 | 27 | (nothing) | 2 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.16 | 46 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.50 | 0.40 | 6 | product:PRD-05, factory:FAC-04 | — |
@@ -526,7 +526,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | FAIL | 0.00 | 0.00 | 6 | component:CMP-01, component:CMP-02, component:CMP-03, component:CMP-04 | — |
 | Hybrid lexical + dense (RRF) | FAIL | 0.00 | 0.00 | 6 | component:CMP-01, component:CMP-02, component:CMP-03, component:CMP-04 | — |
 | Deterministic GraphRAG (bespoke handlers) | FAIL | 0.00 | 0.00 | 3 | component:CMP-01, component:CMP-02, component:CMP-03, component:CMP-04 | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.31 | 22 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.42 | 15 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.80 | 6 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.80 | 6 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | CORRECT | 1.00 | 0.80 | 6 | (nothing) | — |
@@ -912,7 +912,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | FAIL | 0.00 | 0.00 | 6 | campaign:CMP-D | — |
 | Hybrid lexical + dense (RRF) | FAIL | 0.00 | 0.00 | 6 | campaign:CMP-D | — |
 | Deterministic GraphRAG (bespoke handlers) | FAIL | 0.00 | 0.00 | 6 | campaign:CMP-D | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.08 | 24 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.10 | 20 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.18 | 10 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.18 | 10 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | FAIL | 0.00 | 0.00 | 6 | campaign:CMP-D | — |
@@ -932,7 +932,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | FAIL | 0.00 | 0.00 | 6 | product:PRD-08 | — |
 | Hybrid lexical + dense (RRF) | FAIL | 0.00 | 0.00 | 6 | product:PRD-08 | — |
 | Deterministic GraphRAG (bespoke handlers) | FAIL | 0.00 | 0.00 | 6 | product:PRD-08 | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.12 | 16 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.11 | 17 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.50 | 3 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 1.00 | 1 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | CORRECT | 1.00 | 0.29 | 6 | (nothing) | — |
@@ -992,7 +992,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | PARTIAL | 0.67 | 0.44 | 6 | product:PRD-01 | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 0.67 | 0.44 | 6 | product:PRD-01 | — |
 | Deterministic GraphRAG (bespoke handlers) | PARTIAL | 0.67 | 0.44 | 6 | product:PRD-01 | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.21 | 26 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.25 | 21 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.16 | 35 | (nothing) | 2 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.14 | 41 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.67 | 0.44 | 6 | seller:SEL-05 | — |
@@ -1096,7 +1096,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | FAIL | 0.00 | 0.00 | 6 | line:LN-04, defect:DEF-03, defect:DEF-04, defect:DEF-08, +1 more | — |
 | Hybrid lexical + dense (RRF) | FAIL | 0.00 | 0.00 | 6 | line:LN-04, defect:DEF-03, defect:DEF-04, defect:DEF-08, +1 more | — |
 | Deterministic GraphRAG (bespoke handlers) | FAIL | 0.00 | 0.00 | 6 | line:LN-04, defect:DEF-03, defect:DEF-04, defect:DEF-08, +1 more | — |
-| Agentic RAG (ReAct, retrieval tools) | FAIL | 0.00 | 0.00 | 11 | line:LN-04, defect:DEF-03, defect:DEF-04, defect:DEF-08, +1 more | 6 |
+| Agentic RAG (ReAct, retrieval tools) | FAIL | 0.00 | 0.00 | 9 | line:LN-04, defect:DEF-03, defect:DEF-04, defect:DEF-08, +1 more | 6 |
 | Query planner, 9 traversal primitives | PARTIAL | 0.20 | 0.18 | 6 | defect:DEF-03, defect:DEF-04, defect:DEF-08, defect:DEF-09 | 6 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.53 | 14 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | FAIL | 0.00 | 0.00 | 6 | line:LN-04, defect:DEF-03, defect:DEF-04, defect:DEF-08, +1 more | — |
@@ -1298,7 +1298,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | PARTIAL | 0.25 | 0.20 | 6 | shipment:SHP-2003, shipment:SHP-2004, shipment:SHP-2006 | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 0.75 | 0.60 | 6 | shipment:SHP-2003 | — |
 | Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 0.80 | 6 | (nothing) | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.42 | 15 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.47 | 13 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 1.00 | 4 | (nothing) | 2 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 1.00 | 4 | (nothing) | 2 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.75 | 0.60 | 6 | shipment:SHP-2006 | — |
@@ -1318,7 +1318,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | FAIL | 0.00 | 0.00 | 6 | hub:HUB-01, hub:HUB-03, hub:HUB-04, hub:HUB-05 | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 0.50 | 0.40 | 6 | hub:HUB-03, hub:HUB-04 | — |
 | Deterministic GraphRAG (bespoke handlers) | PARTIAL | 0.50 | 0.40 | 6 | hub:HUB-03, hub:HUB-04 | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.36 | 18 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.38 | 17 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 1.00 | 4 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 1.00 | 4 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.50 | 0.40 | 6 | hub:HUB-04, hub:HUB-05 | — |
@@ -1442,7 +1442,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | FAIL | 0.00 | 0.00 | 6 | hub:HUB-04, hub:HUB-01 | — |
 | Hybrid lexical + dense (RRF) | CORRECT | 1.00 | 0.50 | 6 | (nothing) | — |
 | Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 0.80 | 3 | (nothing) | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.21 | 17 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.22 | 16 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.19 | 19 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.19 | 19 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.50 | 0.25 | 6 | hub:HUB-04 | — |
@@ -1462,7 +1462,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | FAIL | 0.00 | 0.00 | 6 | hub:HUB-01, hub:HUB-03, hub:HUB-04, hub:HUB-08 | — |
 | Hybrid lexical + dense (RRF) | FAIL | 0.00 | 0.00 | 6 | hub:HUB-01, hub:HUB-03, hub:HUB-04, hub:HUB-08 | — |
 | Deterministic GraphRAG (bespoke handlers) | FAIL | 0.00 | 0.00 | 6 | hub:HUB-01, hub:HUB-03, hub:HUB-04, hub:HUB-08 | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.33 | 20 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | PARTIAL | 0.75 | 0.26 | 19 | hub:HUB-01 | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 1.00 | 4 | (nothing) | 1 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 1.00 | 4 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.50 | 0.40 | 6 | hub:HUB-01, hub:HUB-08 | — |
@@ -1496,17 +1496,17 @@ A category counts as handled only if **every** query in it is correct — worst 
 
 **Why it is here:** Prose control.
 
-**Ground truth (4 entities):** log-routing-policy#c0, log-routing-policy#c1, log-disruption-handling#c1, log-disruption-handling#c2
+**Ground truth (4 entities):** log-disruption-handling#c1, log-disruption-handling#c2, log-routing-policy#c0, log-routing-policy#c1
 
 | Architecture | Verdict | Recall | F1 | Returned | Missing | Operator calls |
 |---|---|---|---|---|---|---|
 | Standard RAG (lexical top-K) | CORRECT | 1.00 | 0.80 | 6 | (nothing) | — |
-| Dense-embedding RAG | PARTIAL | 0.25 | 0.20 | 6 | log-routing-policy#c0, log-disruption-handling#c1, log-disruption-handling#c2 | — |
+| Dense-embedding RAG | PARTIAL | 0.25 | 0.20 | 6 | log-disruption-handling#c1, log-disruption-handling#c2, log-routing-policy#c0 | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 0.50 | 0.40 | 6 | log-disruption-handling#c1, log-disruption-handling#c2 | — |
 | Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 0.80 | 6 | (nothing) | — |
 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.80 | 6 | (nothing) | 4 |
-| Query planner, 9 traversal primitives | FAIL | 0.00 | 0.00 | 0 | log-routing-policy#c0, log-routing-policy#c1, log-disruption-handling#c1, log-disruption-handling#c2 | — |
-| Adaptive planner, 15 operators | FAIL | 0.00 | 0.00 | 0 | log-routing-policy#c0, log-routing-policy#c1, log-disruption-handling#c1, log-disruption-handling#c2 | — |
+| Query planner, 9 traversal primitives | FAIL | 0.00 | 0.00 | 0 | log-disruption-handling#c1, log-disruption-handling#c2, log-routing-policy#c0, log-routing-policy#c1 | — |
+| Adaptive planner, 15 operators | FAIL | 0.00 | 0.00 | 0 | log-disruption-handling#c1, log-disruption-handling#c2, log-routing-policy#c0, log-routing-policy#c1 | — |
 | Hybrid fused + graph expansion (this repo, retrieval only) | PARTIAL | 0.50 | 0.40 | 6 | log-disruption-handling#c1, log-disruption-handling#c2 | — |
 | Hybrid retrieval + operator vocabulary (this repo, production) | PARTIAL | 0.50 | 0.40 | 6 | log-disruption-handling#c1, log-disruption-handling#c2 | — |
 
@@ -1544,7 +1544,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | CORRECT | 1.00 | 0.29 | 6 | (nothing) | — |
 | Hybrid lexical + dense (RRF) | CORRECT | 1.00 | 0.29 | 6 | (nothing) | — |
 | Deterministic GraphRAG (bespoke handlers) | CORRECT | 1.00 | 0.29 | 6 | (nothing) | — |
-| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.11 | 17 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.10 | 19 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.12 | 16 | (nothing) | 2 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.12 | 16 | (nothing) | 2 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | CORRECT | 1.00 | 0.29 | 6 | (nothing) | — |
@@ -1588,7 +1588,7 @@ A category counts as handled only if **every** query in it is correct — worst 
 | Dense-embedding RAG | PARTIAL | 1.00 | 0.29 | 6 | (nothing) | — |
 | Hybrid lexical + dense (RRF) | PARTIAL | 1.00 | 0.29 | 6 | (nothing) | — |
 | Deterministic GraphRAG (bespoke handlers) | FAIL | 0.00 | 0.00 | 6 | account:ACC-05 | — |
-| Agentic RAG (ReAct, retrieval tools) | PARTIAL | 1.00 | 0.13 | 15 | (nothing) | 6 |
+| Agentic RAG (ReAct, retrieval tools) | PARTIAL | 1.00 | 0.08 | 24 | (nothing) | 6 |
 | Query planner, 9 traversal primitives | PARTIAL | 1.00 | 0.29 | 6 | (nothing) | 6 |
 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.18 | 10 | (nothing) | 1 |
 | Hybrid fused + graph expansion (this repo, retrieval only) | FAIL | 0.00 | 0.00 | 6 | account:ACC-05 | — |
@@ -1783,17 +1783,17 @@ Cases where the verdict and entity-level F1 disagree — the architecture surfac
 | Query | Architecture | Verdict | Recall | Precision | F1 | Returned | Required |
 |---|---|---|---|---|---|---|---|
 | RE3 | Hybrid retrieval + operator vocabulary (this repo, production) | CORRECT | 1.00 | 0.04 | 0.08 | 25 | 1 |
-| RE5 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.04 | 0.08 | 24 | 1 |
 | RE3 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.05 | 0.09 | 22 | 1 |
 | AE11 | Hybrid retrieval + operator vocabulary (this repo, production) | CORRECT | 1.00 | 0.05 | 0.10 | 20 | 1 |
+| RE5 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.05 | 0.10 | 20 | 1 |
 | LG5 | Hybrid retrieval + operator vocabulary (this repo, production) | CORRECT | 1.00 | 0.05 | 0.10 | 20 | 1 |
 | MF10 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.05 | 0.10 | 19 | 1 |
+| FN1 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.05 | 0.10 | 19 | 1 |
 | AE8 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.06 | 0.11 | 18 | 1 |
 | MF3 | Hybrid retrieval + operator vocabulary (this repo, production) | CORRECT | 1.00 | 0.06 | 0.11 | 18 | 1 |
 | AE11 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.06 | 0.11 | 17 | 1 |
-| FN1 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.06 | 0.11 | 17 | 1 |
+| RE6 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.06 | 0.11 | 17 | 1 |
 | C3 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.06 | 0.12 | 16 | 1 |
-| RE6 | Agentic RAG (ReAct, retrieval tools) | CORRECT | 1.00 | 0.06 | 0.12 | 16 | 1 |
 | FN1 | Query planner, 9 traversal primitives | CORRECT | 1.00 | 0.06 | 0.12 | 16 | 1 |
 | FN1 | Adaptive planner, 15 operators | CORRECT | 1.00 | 0.06 | 0.12 | 16 | 1 |
 | FN1 | Hybrid retrieval + operator vocabulary (this repo, production) | CORRECT | 1.00 | 0.06 | 0.12 | 16 | 1 |

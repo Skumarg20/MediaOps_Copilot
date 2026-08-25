@@ -145,7 +145,7 @@ describe('hard routing rules', () => {
 		});
 
 		expect(pin.code).toBe('vector_unavailable');
-		expect(pin.path).toBe('vectorless');
+		expect(pin.path).toBe('hybrid');
 	});
 
 	it('honours the operator override above everything else', () => {

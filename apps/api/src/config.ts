@@ -47,8 +47,6 @@ export const config = {
 		baseUrl: str('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
 		generateTimeoutMs: num('OPENROUTER_TIMEOUT_MS', 30_000),
 		maxTokens: num('OPENROUTER_MAX_TOKENS', 512),
-		// The hosted catalogue changes far less often than a local Ollama tag list,
-		// so it is cached for minutes rather than seconds.
 		probeTtlMs: num('OPENROUTER_PROBE_TTL_MS', 300_000),
 		circuitThreshold: num('OPENROUTER_CIRCUIT_THRESHOLD', 3),
 		circuitResetMs: num('OPENROUTER_CIRCUIT_RESET_MS', 30_000),
@@ -59,7 +57,7 @@ export const config = {
 	},
 
 	models: ['llama3.2:3b', 'qwen2.5:3b'] as const satisfies readonly ModelArm[],
-	paths: ['vector', 'vectorless'] as const satisfies readonly RetrievalPath[],
+	paths: ['vector', 'vectorless', 'hybrid'] as const satisfies readonly RetrievalPath[],
 
 	retrieval: {
 		topK: num('RETRIEVAL_TOP_K', 3),
@@ -70,11 +68,28 @@ export const config = {
 		bm25Coverage: num('BM25_COVERAGE_FLOOR', 0.5),
 		chunkSize: num('CHUNK_SIZE', 500),
 		chunkOverlap: num('CHUNK_OVERLAP', 80),
-		forceVectorless: bool('FORCE_VECTORLESS', false)
+		forceVectorless: bool('FORCE_VECTORLESS', false),
+
+		hybridTopK: num('HYBRID_TOP_K', 6),
+		rrfK: num('RRF_K', 60),
+		mmrLambda: num('MMR_LAMBDA', 0.7),
+		graphMaxHops: num('GRAPH_MAX_HOPS', 2),
+		expansionSeeds: num('GRAPH_EXPANSION_SEEDS', 4),
+		expansionDiscount: num('GRAPH_EXPANSION_DISCOUNT', 0.9),
+		docLinkFloor: num('GRAPH_DOC_LINK_FLOOR', 0.34)
+	},
+
+	neo4j: {
+		url: str('NEO4J_URL', 'bolt://localhost:7687'),
+		user: str('NEO4J_USER', 'neo4j'),
+		password: str('NEO4J_PASSWORD', 'copilotgraph'),
+		database: str('NEO4J_DATABASE', 'neo4j'),
+		poolSize: num('NEO4J_POOL_SIZE', 20),
+		timeoutMs: num('NEO4J_TIMEOUT_MS', 15_000)
 	},
 
 	agent: {
-		maxSteps: num('AGENT_MAX_STEPS', 3)
+		maxSteps: num('AGENT_MAX_STEPS', 5)
 	},
 
 	rl: {

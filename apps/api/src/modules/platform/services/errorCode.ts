@@ -1,5 +1,4 @@
-import type { Knex } from 'knex';
-import { db } from '@/connections/index.js';
+import { db, type DbOptions } from '@/connections/index.js';
 
 export interface ErrorCode {
 	code: string;
@@ -8,15 +7,18 @@ export interface ErrorCode {
 	remediation: string;
 }
 
-export async function getErrorCode({ code }: { code: string }, trx: Knex = db): Promise<ErrorCode | undefined> {
-	return trx('platform.errorCode').where({ code: code.toUpperCase() }).first();
+export async function getErrorCode(
+	{ code }: { code: string },
+	{ transaction = db }: DbOptions = {}
+): Promise<ErrorCode | undefined> {
+	return transaction('platform.errorCode').where({ code: code.toUpperCase() }).first();
 }
 
-export async function listErrorCodes(_args: Record<string, never> = {}, trx: Knex = db): Promise<ErrorCode[]> {
-	return trx('platform.errorCode').select('*').orderBy('code', 'asc');
+export async function listErrorCodes({ transaction = db }: DbOptions = {}): Promise<ErrorCode[]> {
+	return transaction('platform.errorCode').select('*').orderBy('code', 'asc');
 }
 
-export async function getErrorCodeKeys(_args: Record<string, never> = {}, trx: Knex = db): Promise<Set<string>> {
-	const rows = await trx('platform.errorCode').select('code');
+export async function getErrorCodeKeys({ transaction = db }: DbOptions = {}): Promise<Set<string>> {
+	const rows = await transaction('platform.errorCode').select('code');
 	return new Set(rows.map((row: { code: string }) => row.code));
 }

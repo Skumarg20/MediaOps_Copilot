@@ -1,8 +1,10 @@
-import { decidePin, extractAnchors } from './rules.js';
+import { decidePin, detectStructuralIntent, extractAnchors, isProcedural } from './rules.js';
 
 export const routingService = {
 	extractAnchors,
-	decidePin
+	decidePin,
+	detectStructuralIntent,
+	isProcedural
 };
 
-export type { PinCode, PinDecision, PinInput } from './rules.js';
+export type { PinCode, PinDecision, PinInput, StructuralIntent } from './rules.js';

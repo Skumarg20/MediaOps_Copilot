@@ -13,11 +13,14 @@
     "format": "prettier --write \"src/**/*.{ts,js,json}\" \"test/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "migrate": "knex --knexfile knexfile.js migrate:latest",
-    "migrate:rollback": "knex --knexfile knexfile.js migrate:rollback",
-    "migrate:make": "knex --knexfile knexfile.js migrate:make",
+    "migrate": "node --env-file=.env ../../node_modules/knex/bin/cli.js --knexfile knexfile.js migrate:latest",
+    "migrate:rollback": "node --env-file=.env ../../node_modules/knex/bin/cli.js --knexfile knexfile.js migrate:rollback",
+    "migrate:make": "node --env-file=.env ../../node_modules/knex/bin/cli.js --knexfile knexfile.js migrate:make",
     "ml:dataset": "tsx src/scripts/generateDataset.ts",
-    "eval": "tsx src/eval/run.ts"
+    "eval": "tsx --env-file=.env src/eval/run.ts",
+    "eval:architectures": "tsx src/eval/runArchitectures.ts",
+    "graph:sync": "tsx src/scripts/syncGraph.ts",
+    "graph:verify": "tsx src/scripts/verifyGraph.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
@@ -38,6 +41,7 @@
     "hono": "^4.6.13",
     "knex": "^3.1.0",
     "knex-stringcase": "^1.5.5",
+    "neo4j-driver": "^6.2.0",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "prom-client": "^15.1.3",

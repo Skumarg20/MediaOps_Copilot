@@ -1,14 +1,3 @@
-/**
- * Pure-Node fallback trainer for the triage classifier.
- *
- * `train_triage_classifier.py` (scikit-learn) is the reference trainer and the
- * one CI runs. This file exists so the repo is buildable and demonstrable on a
- * machine with no Python at all, and it writes the *same* `model.json` schema
- * from the *same* CSV feature columns — multinomial logistic regression fitted
- * by batch gradient descent on the softmax cross-entropy.
- *
- * Run: npm run ml:train
- */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +13,6 @@ const L2 = 1e-4;
 const TEST_FRACTION = 0.25;
 const SEED = 20260820;
 
-// ---------------------------------------------------------------- csv parsing
 
 function parseCsv(text) {
   const rows = [];
@@ -61,7 +49,6 @@ function parseCsv(text) {
   return rows.filter((r) => r.length > 1 || (r[0] ?? '') !== '');
 }
 
-// --------------------------------------------------------------------- helpers
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -80,7 +67,6 @@ function softmax(logits) {
   return exps.map((e) => e / sum);
 }
 
-// ------------------------------------------------------------------- training
 
 function standardise(X) {
   const n = X.length;
@@ -92,8 +78,6 @@ function standardise(X) {
   for (const row of X) for (let j = 0; j < d; j += 1) stds[j] += (row[j] - means[j]) ** 2 / n;
   for (let j = 0; j < d; j += 1) {
     stds[j] = Math.sqrt(stds[j]);
-    // A constant feature carries no signal; guard the divide rather than drop
-    // the column, so the vector shape stays the compiled contract.
     if (stds[j] < 1e-9) stds[j] = 1;
   }
   return { means, stds };
@@ -149,7 +133,6 @@ function predict(W, b, xz) {
   return best;
 }
 
-// -------------------------------------------------------------------- metrics
 
 function evaluate(W, b, Xz, y, labels) {
   const k = labels.length;
@@ -195,9 +178,6 @@ function renderReport({ accuracy, perClass, confusion }, labels, counts) {
 
   const macroF1 = perClass.reduce((a, r) => a + r.f1, 0) / perClass.length;
 
-  // Describe the confusion the run actually produced rather than the one we
-  // predicted. A report that asserts an expected error mode the matrix
-  // contradicts is worse than no interpretation at all.
   let worst = { actual: null, predicted: null, count: 0 };
   confusion.forEach((row, i) => {
     row.forEach((count, j) => {
@@ -266,7 +246,6 @@ error in this class.
 `;
 }
 
-// ----------------------------------------------------------------------- main
 
 function main() {
   if (!fs.existsSync(CSV)) {
@@ -283,7 +262,6 @@ function main() {
   const X = data.map((r) => r.slice(2).map(Number));
   const y = data.map((r) => labels.indexOf(r[1]));
 
-  // Deterministic shuffle, then a stratified-enough split via interleaving.
   const rand = mulberry32(SEED);
   const idx = X.map((_, i) => i);
   for (let i = idx.length - 1; i > 0; i -= 1) {

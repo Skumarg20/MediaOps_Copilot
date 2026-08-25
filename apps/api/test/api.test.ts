@@ -323,12 +323,12 @@ describe.skipIf(!hasPostgres)('api', () => {
 			expect(body.rationale.model.why).toMatch(/unavailable|unreachable|failed/i);
 		});
 
-		it('forces the vectorless path when the vector index is empty', async () => {
+		it('falls back to the fused path when the vector index is empty', async () => {
 			await useContext({ llm: new FakeLlmAdapter({ embeddingDown: true }) });
 			const { status, body } = await ask('how do I safely retry a stuck job');
 
 			expect(status).toBe(200);
-			expect(body.retrieval_path).toBe('vectorless');
+			expect(body.retrieval_path).toBe('hybrid');
 			expect(body.rationale.path.deterministic).toBe(true);
 			expect(body.rationale.path.why).toMatch(/unavailable|degraded|floor/i);
 		});
@@ -376,7 +376,7 @@ describe.skipIf(!hasPostgres)('api', () => {
 				series: Array<{ reward: number }>;
 			};
 
-			expect(body.arms).toHaveLength(12);
+			expect(body.arms).toHaveLength(18);
 			expect(body.total_pulls).toBeGreaterThanOrEqual(1);
 			expect(body.series).toHaveLength(1);
 		});

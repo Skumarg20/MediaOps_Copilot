@@ -1,8 +1,3 @@
-
-/**
- * Learned state — the system's memory. Never rebuilt from the repo: if these
- * tables are lost, every rating an operator ever gave is lost with them.
- */
 export async function up(knex) {
 	await knex.schema.withSchema('copilot').createTable('transaction', (table) => {
 		table.uuid('id').primary();

@@ -8,7 +8,7 @@ import { TRIAGE_CLASSES, actionKey, allActions } from './state.js';
 export interface BanditOptions {
 	epsilonOverride?: number;
 	random?: () => number;
-	trx?: Knex;
+	transaction?: Knex;
 }
 
 interface ArmRow {
@@ -33,11 +33,11 @@ function toStats(row: ArmRow): ArmStats {
 
 export class EpsilonGreedyBandit implements Policy {
 	private readonly random: () => number;
-	private readonly trx: Knex;
+	private readonly transaction: Knex;
 
 	constructor(private readonly opts: BanditOptions = {}) {
 		this.random = opts.random ?? Math.random;
-		this.trx = opts.trx ?? db;
+		this.transaction = opts.transaction ?? db;
 	}
 
 	async init(): Promise<void> {
@@ -51,20 +51,20 @@ export class EpsilonGreedyBandit implements Policy {
 				lastUpdated: new Date()
 			}))
 		);
-
-		await this.trx('copilot.banditArm').insert(rows).onConflict(['state', 'action']).ignore();
+    
+		await this.transaction('copilot.banditArm').insert(rows).onConflict(['state', 'action']).ignore();
 
 		for (const arm of await this.snapshot()) {
 			rlReward.set({ state: arm.state, action: arm.action }, arm.meanReward);
 		}
 	}
 
-	withTransaction(trx: Knex): EpsilonGreedyBandit {
-		return new EpsilonGreedyBandit({ ...this.opts, trx });
+	withTransaction(transaction: Knex): EpsilonGreedyBandit {
+		return new EpsilonGreedyBandit({ ...this.opts, transaction });
 	}
 
 	private async row(state: TriageClass, key: string, lock = false): Promise<ArmStats> {
-		const query = this.trx('copilot.banditArm').where({ state, action: key });
+		const query = this.transaction('copilot.banditArm').where({ state, action: key });
 		const found = (await (lock ? query.forUpdate() : query).first()) as ArmRow | undefined;
 		if (found) return toStats(found);
 
@@ -76,12 +76,12 @@ export class EpsilonGreedyBandit implements Policy {
 			meanReward: config.rl.optimisticInit,
 			lastUpdated: new Date()
 		};
-		await this.trx('copilot.banditArm').insert(seed).onConflict(['state', 'action']).ignore();
+		await this.transaction('copilot.banditArm').insert(seed).onConflict(['state', 'action']).ignore();
 		return toStats(seed as ArmRow);
 	}
 
 	private async statePulls(state: TriageClass): Promise<number> {
-		const row = (await this.trx('copilot.banditArm').where({ state }).sum({ total: 'pulls' }).first()) as
+		const row = (await this.transaction('copilot.banditArm').where({ state }).sum({ total: 'pulls' }).first()) as
 			{ total: string | number | null } | undefined;
 		return Number(row?.total ?? 0);
 	}
@@ -135,9 +135,9 @@ export class EpsilonGreedyBandit implements Policy {
 		const key = actionKey(action);
 		await this.row(state, key);
 
-		const [updated] = (await this.trx('copilot.banditArm')
+		const [updated] = (await this.transaction('copilot.banditArm')
 			.where({ state, action: key })
-			.update({ pulls: this.trx.raw('?? + 1', ['pulls']), lastUpdated: new Date() })
+			.update({ pulls: this.transaction.raw('?? + 1', ['pulls']), lastUpdated: new Date() })
 			.returning('*')) as ArmRow[];
 
 		const stats = toStats(updated!);
@@ -157,11 +157,11 @@ export class EpsilonGreedyBandit implements Policy {
 		const ratedSamples = current.ratedPulls + 1;
 		const mean = ratedSamples <= 1 ? reward : current.meanReward + (reward - current.meanReward) / ratedSamples;
 
-		const [updated] = (await this.trx('copilot.banditArm')
+		const [updated] = (await this.transaction('copilot.banditArm')
 			.where({ state, action: key })
 			.update({
 				meanReward: Number(mean.toFixed(6)),
-				ratedPulls: this.trx.raw('?? + 1', ['ratedPulls']),
+				ratedPulls: this.transaction.raw('?? + 1', ['ratedPulls']),
 				lastUpdated: new Date()
 			})
 			.returning('*')) as ArmRow[];
@@ -180,7 +180,7 @@ export class EpsilonGreedyBandit implements Policy {
 	}
 
 	async snapshot(): Promise<ArmStats[]> {
-		const rows = (await this.trx('copilot.banditArm')
+		const rows = (await this.transaction('copilot.banditArm')
 			.select('*')
 			.orderBy([{ column: 'state' }, { column: 'action' }])) as ArmRow[];
 		return rows.map(toStats);

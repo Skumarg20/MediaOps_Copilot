@@ -1,6 +1,6 @@
 import type { Knex } from 'knex';
 
-export type RetrievalPath = 'vector' | 'vectorless';
+export type RetrievalPath = 'vector' | 'vectorless' | 'hybrid';
 
 export type ModelArm = 'llama3.2:3b' | 'qwen2.5:3b';
 
@@ -8,7 +8,7 @@ export type TriageClass = 'simple_lookup' | 'complex_diagnostic' | 'urgent_incid
 
 export type ConfidenceBand = 'High' | 'Medium' | 'Low';
 
-export type EvidenceSource = 'vector' | 'vectorless' | 'tool';
+export type EvidenceSource = 'vector' | 'vectorless' | 'hybrid' | 'tool';
 
 export type Evidence = {
   id: string;

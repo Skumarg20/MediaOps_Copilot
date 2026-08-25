@@ -1,6 +1,5 @@
 import { createRequire } from 'node:module';
-import type { Knex } from 'knex';
-import { db } from '@/connections/index.js';
+import { db, type DbOptions } from '@/connections/index.js';
 import { logEvent, logger } from '@/utils/index.js';
 
 const require = createRequire(import.meta.url);
@@ -22,10 +21,13 @@ type ErrorCodeFixture = Record<string, { meaning: string; severity: string; reme
 const jobsFixture = require('../data/jobs.json') as JobFixture[];
 const errorCodesFixture = require('../data/errorCodes.json') as ErrorCodeFixture;
 
-export async function seedReferenceData(
-	_args: Record<string, never> = {},
-	trx: Knex = db
-): Promise<{ jobs: number; errorCodes: number }> {
+export async function seedReferenceData({
+	transaction
+}: DbOptions = {}): Promise<{ jobs: number; errorCodes: number }> {
+	if (!transaction) {
+		return db.transaction((trx) => seedReferenceData({ transaction: trx }));
+	}
+
 	const jobs = jobsFixture.map((job) => ({
 		id: job.id,
 		status: job.status,
@@ -40,10 +42,8 @@ export async function seedReferenceData(
 
 	const errorCodes = Object.entries(errorCodesFixture).map(([code, body]) => ({ code, ...body }));
 
-	await trx.transaction(async (tx) => {
-		await tx('platform.job').insert(jobs).onConflict('id').merge();
-		await tx('platform.errorCode').insert(errorCodes).onConflict('code').merge();
-	});
+	await transaction('platform.job').insert(jobs).onConflict('id').merge();
+	await transaction('platform.errorCode').insert(errorCodes).onConflict('code').merge();
 
 	const counts = { jobs: jobs.length, errorCodes: errorCodes.length };
 	logEvent(logger, 'info', 'boot.seeded', counts);

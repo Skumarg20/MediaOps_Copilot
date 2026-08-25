@@ -36,7 +36,7 @@ export async function recordFeedback({
 	});
 
 	const armStats = await db.transaction(async (trx) => {
-		const written = await insertFeedback({ transactionId, score, reward }, trx);
+		const written = await insertFeedback({ transactionId, score, reward }, { transaction: trx });
 		if (!written) {
 			throw new HTTPException(409, { message: 'Feedback already recorded; the policy was not updated' });
 		}
