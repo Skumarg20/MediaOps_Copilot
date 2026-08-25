@@ -110,8 +110,8 @@ npm run dev:web                    # http://localhost:3000
 docker compose up -d postgres
 createdb -h localhost -U copilot mediaops_test    # or set TEST_DB_DATABASE
 
-npm test                                  # everything - 167 tests
-npm run test --workspace=apps/api         # 149 tests
+npm test                                  # everything - 252 tests
+npm run test --workspace=apps/api         # 234 tests
 npm run test --workspace=apps/web         #  18 tests
 npm run test --workspace=apps/api -- test/bandit.test.ts    # one suite
 ```
@@ -159,6 +159,9 @@ Off by default. Prometheus at `/metrics` works with no collector at all.
 | `what does error code RENDER_TIMEOUT mean` | Vectorless wins - exact glossary hit in ~2 ms with a primary-key citation |
 | `why is my render slower than usual` | Vector wins - cosine finds the performance runbook; vectorless correctly abstains |
 | `why did job 482 fail` | Pins to the record, then follows the failure reason into the glossary |
+| `how do I fix job 482` | Fused path - the record, the error code, and the runbook section two hops out, each cited with the route that reached it |
+| `which worker is causing the most failures` | Structural pin - an aggregation over every job, which no top-K retriever can compute |
+| `which error codes have no runbook coverage` | Set complement - similarity search can only return codes that DO match something |
 | `zxqv plorbnat wibble frotz` | Abstains - nothing clears the retrieval floor, so no model is invoked at all |
 
 ```bash
@@ -187,7 +190,8 @@ Then click **Helpful / Unhelpful** in the console and watch the RL panel move.
 | `npm test` | All suites |
 | `npm run migrate` / `migrate:rollback` / `migrate:make` | Schema |
 | `npm run ml:dataset` / `ml:train` / `ml:train:python` | Classifier |
-| `npm run eval` | Golden-set evaluation → `ml/eval_report.md` |
+| `npm run eval` | Golden-set evaluation → `ml/eval_report.md` (needs Postgres) |
+| `npm run eval:architectures --workspace=apps/api` | Nine retrieval architectures compared → `ml/algorithm_comparison.md`. Offline: no database, no model runtime, no API keys |
 | `docker compose up --build` | Whole system |
 | `docker compose --profile telemetry up otel-collector` | OTLP collector |
 | `docker compose exec ollama ollama pull <model>` | Model weights |
@@ -248,9 +252,9 @@ triage ──► route ──► retrieve ──► reason ──► verify ─�
 
 ## Model runtime: local, hosted, or both
 
-`LLM_PROVIDER` picks the runtime and nothing else changes: every caller is written
-against the `LlmAdapter` interface, so the ReAct loop, grounding gate, bandit and routes
-are identical whichever branch runs.
+`LLM_PROVIDER` picks the runtime and nothing else changes: callers depend on the
+`Generator` and `Embedder` roles, not on a provider, so the ReAct loop, grounding gate,
+bandit and routes are identical whichever branch runs.
 
 | `LLM_PROVIDER` | Generation | Embeddings | Local download | Needs a key |
 |---|---|---|---|---|
@@ -277,32 +281,424 @@ guess; an exact match against real data, which cosine similarity cannot beat.
 Anchors are checked **before** index health. When both apply, the exact match is the
 honest explanation — the query would have taken that path regardless of index health.
 
+**Stage 1b — structural.** Some questions have an answer that is a property of *how*
+records relate rather than a field on any one of them: "which worker fails most", "which
+codes have no runbook", "is 482 the same problem as 487", "who supplies this now". No
+amount of top-*K* similarity retrieval reaches those, so they pin to the fused path,
+which can traverse and compute. This rule runs **before** the anchor rules on purpose —
+"which jobs failed for the same reason as 482" resolves an anchor, but the anchor is the
+question's starting point, not its answer.
+
 **Stage 2 — learned.** For everything else the path is genuinely uncertain, so it joins
 the bandit's action space alongside the model choice.
 
 | Signal | Path | Why |
 |---|---|---|
+| Aggregation / absence / degree / comparison / temporal / what-if shape | **Hybrid (pinned)** | Structurally unreachable by similarity — needs traversal or computation |
+| Anchor resolves **and** the question asks what to *do* | **Hybrid (pinned)** | The record carries the failure reason; the runbook carries the judgement. Cite both |
 | Query contains an existing job ID | Vectorless (pinned) | Exact record retrieval |
 | Query contains a known error code | Vectorless (pinned) | A glossary hit is definitionally correct |
 | Short keyword/entity lookup | Vectorless (bandit-preferred) | BM25 over structured records is fast and precise |
 | Open-ended "why / how / should I" | Vector (bandit-preferred) | Answer is distributed across prose |
-| Vector store unavailable | Vectorless (forced) | Degradation |
+| Vector store unavailable | **Hybrid (forced)** | Lexical search and graph traversal still cover the whole corpus without embeddings |
 
-### Two floors on the keyword path
+---
 
-BM25 applies a **score** floor *and* a **coverage** floor. The score floor alone is not
-enough: one corpus-wide term (`render`) can drag an irrelevant record over any
-threshold, which is how `why is my render slower than usual` ends up answered with a
-plausible-looking `RENDER_TIMEOUT` definition that does not address it. Requiring a hit
-to cover a real share of the query's content terms is what makes this path abstain
-instead.
+## Search paths — system design
+
+Four search mechanisms. Three are **retrieval** paths the router picks between per query;
+the fourth is **computation** the agent invokes on top of whichever path ran.
+
+| | Answers | Indexes | Signal | Runtime cost | Code |
+|---|---|---|---|---|---|
+| `vectorless` | "what is this record / what does this code mean" | 20 records | exact key, then BM25 | no model call | `retrieval/services/vectorless.ts` |
+| `vector` | "explain / why / how should I" | ~34 prose chunks | cosine over embeddings | one embed call — **hard dependency** | `retrieval/services/vector.ts` |
+| `hybrid` | "how do I fix X" and anything structural | all 68 nodes: records, chunks and entities | all three, rank-fused, then traversed | one embed call, skipped if unavailable | `retrieval/services/hybrid.ts` |
+| operators | "how many / which have none / rank by / what if" | the graph itself | typed graph algorithms | no model call, in-memory | `graph/services/{primitives,computation}.ts` |
+
+The first three implement one interface:
+
+```ts
+interface Retriever {
+  name: RetrievalPath;
+  retrieve(query: string, ctx: QueryContext): Promise<Evidence[]>;
+  health(): Promise<DependencyStatus>;
+}
+```
+
+so the pipeline, the eval harness and the bandit never learn which one they are holding.
+
+---
+
+### The shared substrate: the knowledge graph
+
+Everything except `vector` reads the same object. `modules/graph/` builds a **typed,
+timestamped, directed multigraph** from rows that already exist — no LLM extraction,
+because the entities are already typed and extraction would only add noise.
+
+```
+                        ┌────────────┐
+   Submitter ◄──────────┤            ├──────────► Worker
+   SUBMITTED_BY         │    Job     │  RAN_ON
+   JobClass  ◄──────────┤            │
+   OF_CLASS             └─────┬──────┘
+                              │ FAILED_WITH
+                              ▼
+                        ┌────────────┐  DOCUMENTS  ┌────────────┐
+                        │ ErrorCode  │◄────────────┤ DocSection │
+                        └────────────┘             └─────┬──────┘
+                                                         │ ADJACENT_TO
+                                                         ▼
+                                                    DocSection
+```
+
+Six node types, six edge types, 68 nodes and 108 edges for this repository's own data.
+Every edge is timestamped from the job's `queued_at`, so the whole graph is filterable by
+date without retrofitting anything.
+
+Three properties the rest of the design leans on:
+
+- **Every node carries its own retrievable text.** A vector hit, a lexical hit and a graph
+  node are therefore the same object — no join between two stores and no drift between
+  them.
+- **Every edge carries validity.** `validFrom` / `validTo` mean an expired relationship
+  leaves the *active* graph while its text stays in the corpus. That is what makes "who
+  supplies this **now**" answerable and what makes it a trap for text retrieval.
+- **The schema is data.** `GraphSchema` declares node types and typed edges, so operators
+  can ask "what is adjacent to a Seller" without anything hard-coded per domain.
+
+`DocSection -DOCUMENTS-> ErrorCode` cannot be built from string matching alone: only 3 of
+8 codes are named in any runbook. Edges are built from literal mentions **plus** term
+overlap between the code's meaning/remediation text and a section, above
+`GRAPH_DOC_LINK_FLOOR` (0.34), capped at 2 inferred links per code. The basis is recorded
+on the edge (`literal_mention` vs `term_overlap`), so an inferred link is never mistaken
+for a stated one.
+
+---
+
+### Path 1 — `vectorless`: exact lookup, then keyword search
+
+**For:** questions whose answer is a *field*. `what does RENDER_TIMEOUT mean`.
+
+#### Index
+
+Job rows and error-code rows are flattened to sentences and indexed into a hand-written
+BM25 (`k1 = 1.5`, `b = 0.75`) — 20 documents for this repo's data. Rebuilt at boot; nothing persists.
+
+#### Query
+
+```
+query + anchors resolved by the router
+   │
+   ├─► 1. EXACT ─── job:482 ──► the record
+   │                    └─── follows failure_reason ──► errorCode:RENDER_TIMEOUT
+   │              errorCode:X ──► the glossary entry
+   │                    │
+   │                    └── any hit? ──► return immediately, no floor applied
+   │
+   └─► 2. BM25 (only when no anchor resolved)
+              score ≥ 1.2  AND  coverage ≥ 0.5   ──► top 3
+              otherwise ──────────────────────────► return nothing → abstain
+```
+
+The ordering is the point: **an exact hit is never scored against a floor**, because a
+primary-key match has no similarity to be uncertain about. The one-hop follow from job to
+error code is the only structure this path has.
+
+#### Why two floors
+
+The score floor alone is not enough. One corpus-wide term (`render`) can drag an
+irrelevant record over any threshold — which is how `why is my render slower than usual`
+gets answered with a plausible-looking `RENDER_TIMEOUT` definition that does not address
+it. Requiring a hit to cover a real share of the query's *content* terms is what makes
+this path abstain instead.
+
+#### Fails when
+
+The answer lives in prose. This index has never seen a runbook.
+
+---
+
+### Path 2 — `vector`: dense retrieval over prose
+
+**For:** questions whose answer is *explained* across paragraphs. `why is my render slower
+than usual`.
+
+#### Index
+
+Six runbooks → heading-aware chunking at 500 chars with 80 overlap → ~34 chunks → embedded
+with `nomic-embed-text` at boot. A failed build is retried on a widening interval
+(15s, 30s, 60s, 120s, 240s) so a model pulled late is picked up without a restart.
+
+#### Query
+
+```
+query ──► embed ──► cosine against every chunk ──► sort desc
+                                                      │
+                    admit if:  cos ≥ 0.45                          (hard floor)
+                          AND ( cos ≥ 0.70                         (strong match)
+                                OR term coverage ≥ 0.40 )          (weak but on-topic)
+                                                      │
+                                                      └─► top 3
+```
+
+The compound floor is doing real work. A bare cosine floor lets a fluent, topically
+adjacent chunk through on vocabulary alone; requiring either a *strong* score or genuine
+term overlap is what makes `write me a poem about rendering` abstain despite sharing the
+corpus's whole vocabulary.
+
+#### Fails when
+
+The embedder is down — the entire prose corpus becomes invisible, because nothing else
+indexes it. That gap is exactly what `hybrid` closes.
+
+---
+
+### Path 3 — `hybrid`: fused retrieval with graph expansion
+
+**For:** everything that needs a record *and* prose, and everything structural.
+
+#### Index
+
+**Every graph node** becomes one retrieval unit — job records, error codes, workers, job
+classes, submitters and runbook chunks alike. One unit set, indexed twice: BM25 *and*
+embeddings. Before this, the two indexes covered disjoint halves of the corpus and could
+never reinforce each other.
+
+#### Query — six stages
+
+```
+ ┌─ 1. SEED ─────────────────────────────────────────────────────────┐
+ │  exact anchors        weight 2   ─┐                               │
+ │  BM25    ≥1.2 & cov ≥0.5          ├─ each subject to the SAME     │
+ │  dense   ≥0.45 & (≥0.7 | cov≥0.4) ┤  floors the single paths use  │
+ │  type-name seeds      weight 0.5 ─┘  (only when no exact anchor)  │
+ └───────────────────────────┬───────────────────────────────────────┘
+                             │  no seed cleared a floor? ──► abstain
+                             ▼
+ ┌─ 2. FUSE ─────────────────────────────────────────────────────────┐
+ │  Reciprocal Rank Fusion:  score(d) = Σ  weight / (60 + rank(d))   │
+ │  rank-only, so BM25 sums and cosines never need calibrating       │
+ └───────────────────────────┬───────────────────────────────────────┘
+                             ▼
+ ┌─ 3. EXPAND ───────────────────────────────────────────────────────┐
+ │  BFS ≤2 hops from the top 4 fused seeds, both directions          │
+ │  score = seed × hopDecay[hops] × 0.9                              │
+ │  hopDecay = [1.0, 1.0, 0.6, 0.35, 0.2]                            │
+ │  records hop path + edge types on every node it reaches           │
+ └───────────────────────────┬───────────────────────────────────────┘
+                             ▼
+ ┌─ 4. RANK ─────────────────────────────────────────────────────────┐
+ │  score desc, then hops asc — a node matched directly outranks a   │
+ │  node merely adjacent to one                                      │
+ └───────────────────────────┬───────────────────────────────────────┘
+                             ▼
+ ┌─ 5. DIVERSIFY ────────────────────────────────────────────────────┐
+ │  MMR:  0.7 × relevance − 0.3 × max Jaccard to already-selected    │
+ │  term-set similarity, so it still works with the embedder down    │
+ └───────────────────────────┬───────────────────────────────────────┘
+                             ▼
+ ┌─ 6. CAP ──────────────────► top 6, each carrying its provenance ──┘
+```
+
+#### Three design decisions worth the words
+
+**Rank fusion, not score fusion.** BM25 scores are unbounded sums of IDF terms; cosine
+similarities live in `[-1, 1]`. Adding or weighting them needs a calibration that would
+have to be re-fitted every time the corpus changes. RRF uses only ordinal position, so
+there is nothing to calibrate. `k = 60` damps the top ranks enough that no single
+retriever dominates on its own.
+
+**Expansion runs only from admitted seeds.** This is the load-bearing guardrail. The
+floors are *unchanged* from the two single-signal paths, and traversal starts only from
+something that already cleared one. Without it, an out-of-domain question with one weak
+accidental match expands into a plausible-looking pile of evidence and the abstention
+behaviour dies quietly. Every out-of-domain case in the golden set and in all seven
+benchmark domains is re-run against this specifically.
+
+**Type-name seeding.** `rank products by exposure to active incidents` names no entity and
+shares few terms with any single record, so every similarity floor rejects it — yet it is
+a perfectly answerable question about a population the schema knows by name. When no exact
+anchor pinned the query, nodes of any type the query names outright are admitted at low
+weight. A question has to accidentally contain a schema type name to get through, and no
+abstention case does.
+
+#### Evidence shape
+
+Every item carries how it was reached:
+
+```jsonc
+{
+  "id": "runbook-timeouts-and-retries#c3",
+  "source": "hybrid",
+  "score": 0.54,
+  "meta": {
+    "kind": "DocSection",
+    "retrievedBy": ["graph"],
+    "hops": 2,
+    "hopPath": "job:482 -> errorCode:RENDER_TIMEOUT -> runbook-timeouts-and-retries#c3",
+    "viaEdges": ["FAILED_WITH", "DOCUMENTS"],
+    "fusionRanks": [{ "source": "exact", "rank": 1 }]
+  }
+}
+```
+
+Graph retrieval is explainable by construction — the traversal path *is* the explanation.
+Throwing it away at the citation boundary would waste that for nothing, so a reviewer can
+audit not just *that* a fact was retrieved but *why*.
+
+#### Degrades, does not fail
+
+With the embedder down the dense list is simply empty. Lexical search and graph traversal
+still cover the whole corpus, so `hybrid` reports `degraded` rather than `down` — and the
+router pins to it during an embedding outage for exactly that reason.
+
+---
+
+### Layer 4 — operator search: computing over the graph
+
+Not a retriever. Fifteen typed graph operations exposed to the ReAct loop as tools; their
+results become citable evidence alongside whatever the retrieval path returned.
+
+| Tier | Operators |
+|---|---|
+| Traversal (9) | `find_nodes` `get_node` `get_neighbors` `shortest_path` `subgraph` `count_edges` `set_complement` `filter_edges_by_date` `propagate_risk` |
+| Computation (6) | `simulate_removal` `subgraph_diff` `aggregate_over_type` `betweenness` `pagerank` `connected_components` |
+
+#### Why a separate layer at all
+
+Retrieval answers *"find me the relevant material."* Some questions are not asking for
+material:
+
+| Question shape | Why retrieval cannot answer it | Operator |
+|---|---|---|
+| "which worker fails most" | a count over every record; top-*K* samples, it does not count | `aggregate_over_type` |
+| "which codes have no runbook" | similarity returns what *matches*; absence has nothing to match | `set_complement` |
+| "if worker-07 is drained, what stops" | defined by what is missing after a hypothetical edit | `simulate_removal` |
+| "is 482 the same problem as 487" | no chunk contains a comparison | `subgraph_diff` |
+| "rank everything by blast radius" | a weighted score that exists in no text | `propagate_risk` |
+| "which accounts are cut off" | isolation is invisible to similarity by construction | `connected_components` |
+
+#### The distinction that makes it work
+
+Each **computation** operator encapsulates a *complete algorithm*, not a step. A
+traversal-only planner has to emulate an aggregate by iterating — one `count_edges` per
+member — and runs out of step budget on anything but a tiny population. `aggregate_over_type`
+does the whole iteration internally, so the model makes **one** call where the loop would
+have needed six and still not finished.
+
+Measured over 83 queries in 7 domains: traversal primitives alone get 62 correct; adding
+the six computation operators gets 76. See
+[`ALGORITHM_COMPARISON.md`](./ALGORITHM_COMPARISON.md).
+
+#### Calling convention
+
+The system prompt names which operator fits which question shape — *"for aggregation
+queries use `aggregate_over_type` INSTEAD of iterating manually"* — because that
+instruction is what made adoption work in the reference paper. Calls are parsed from the
+Action line in either positional or keyword form:
+
+```
+Action: aggregate_over_type(rootType=Worker, targetType=Job, where=status=failed)
+Action: set_complement(ErrorCode, [errorCode:RENDER_TIMEOUT, errorCode:UPLOAD_TIMEOUT])
+```
+
+An operator result contributes two kinds of evidence: the operator's own observation
+(`graph:aggregate_over_type(...)`) and up to six of the **entities it identified**, as
+separately citable items — so a structural answer cites the records it is about, not just
+the tool that found them. Every call is persisted to `copilot.tool_invocation`.
+
+#### Domain-agnostic by construction
+
+Nothing in the operator layer knows about render jobs. A different dataset is a different
+`DomainDataset` and nothing else; six ship in `modules/graph/services/domains/` —
+aerospace, retail, manufacturing, logistics, finance and commerce — and all six are
+hold-out corpora for the architecture benchmark.
+
+---
+
+### How the four compare
+
+| | `vectorless` | `vector` | `hybrid` | operators |
+|---|---|---|---|---|
+| Covers records | ✅ | ❌ | ✅ | ✅ |
+| Covers prose | ❌ | ✅ | ✅ | ❌ |
+| Needs the embedder | ❌ | ✅ **hard** | ⚠️ degrades | ❌ |
+| Multi-hop | 1 hop, one way | ❌ | ≤2 hops, both ways | caller-specified |
+| Counts / aggregates | ❌ | ❌ | ❌ | ✅ |
+| Answers absence | ❌ | ❌ | ❌ | ✅ |
+| Temporal filtering | ❌ | ❌ | ⚠️ see below | ✅ |
+| Explains its route | primary key | ❌ | hop path | operator + path |
+| top-*K* | 3 | 3 | 6 | n/a |
+
+`topK` stays at 3 for the two single-signal paths because raising it there only buys
+near-duplicates. `hybrid` can afford 6 because fusion and MMR make the extra slots carry
+different content.
+
+**Known gap — temporal filtering on the hybrid path.** The graph carries `validFrom` /
+`validTo` on every edge and the operators honour them, but `HybridRetriever` expands
+without passing an `asOf`, so its traversal walks expired edges alongside active ones. It
+does not currently have a "now" to pass: `QueryContext` carries anchors and triage, not a
+reference instant. Temporal questions are therefore answered by the operator layer, which
+is why the router pins them to `hybrid` — the path whose *agent* can filter, not whose
+*retrieval* does. Threading a reference time through `QueryContext` would close it.
+
+### Which one runs
+
+```
+                       ┌── forced by config ──────────────► vectorless
+                       │
+                       ├── structural shape? ─────────────► hybrid   (pinned)
+                       │   aggregation · absence · degree
+                       │   comparison · temporal · what-if
+                       │
+   query ──► router ───┼── anchor + "what should I do"? ──► hybrid   (pinned)
+                       │
+                       ├── anchor resolves? ──────────────► vectorless (pinned)
+                       │
+                       ├── embedder down? ────────────────► hybrid   (forced)
+                       │
+                       └── genuinely uncertain ───────────► ε-greedy bandit
+                                                              over 6 arms
+                                                              (3 paths × 2 models)
+```
+
+If the chosen path returns nothing above its floor, the pipeline falls back **once** — to
+`hybrid` if it is not already there, otherwise to `vectorless`. Hybrid is the right
+fallback because it is the only path covering both records and prose; falling back from
+`vector` to `vectorless` used to swap one half of the corpus for the other.
+
+Operators are not routed. The agent invokes them during the ReAct loop on top of whatever
+retrieval returned, and the grounding gate judges the combined result the same way it
+judges everything else.
+
+### Tuning surface
+
+Every knob is an environment variable with a documented default; none needs changing to
+run the system.
+
+| Variable | Default | Governs |
+|---|---|---|
+| `RETRIEVAL_TOP_K` | 3 | Cap for `vector` and `vectorless` |
+| `HYBRID_TOP_K` | 6 | Cap for `hybrid` |
+| `BM25_SCORE_FLOOR` / `BM25_COVERAGE_FLOOR` | 1.2 / 0.5 | Lexical admission |
+| `VECTOR_SIMILARITY_FLOOR` | 0.45 | Hard cosine floor |
+| `VECTOR_STRONG_SCORE` / `VECTOR_COVERAGE_FLOOR` | 0.7 / 0.4 | The either/or above the hard floor |
+| `RRF_K` | 60 | Rank-fusion damping |
+| `MMR_LAMBDA` | 0.7 | Relevance vs diversity |
+| `GRAPH_MAX_HOPS` | 2 | Expansion radius |
+| `GRAPH_EXPANSION_SEEDS` | 4 | How many seeds may expand |
+| `GRAPH_EXPANSION_DISCOUNT` | 0.9 | Penalty on anything reached by traversal |
+| `GRAPH_DOC_LINK_FLOOR` | 0.34 | Term overlap for an inferred documentation edge |
+| `AGENT_MAX_STEPS` | 5 | ReAct budget |
+
 
 ## Reinforcement learning
 
 |  |  |
 |---|---|
 | **State** | Triage class — `simple_lookup` \| `complex_diagnostic` \| `urgent_incident` |
-| **Action** | `(path, model)` ∈ `{vector, vectorless} × {llama3.2, qwen2.5}` — 4 arms, **masked to 2** when a rule pins the path |
+| **Action** | `(path, model)` ∈ `{vector, vectorless, hybrid} × {llama3.2, qwen2.5}` — 6 arms, **masked to 2** when a rule pins the path |
 | **Policy** | ε-greedy, ε = 0.2 decaying to 0.05 as pulls accumulate |
 | **Reward** | `R = (feedback × 10) − latency_seconds − hallucination_penalty`, feedback ∈ {0, 1} |
 | **Update** | Incremental sample mean, `Q ← Q + (R − Q)/N`, **N = rated pulls** |
@@ -372,8 +768,12 @@ its penalty — so the policy learns to prefer paths that produce *verifiable* a
 
 ## Evaluation
 
-Everything above is a claim. `npm run eval` is the harness that checks it, against a
-40-case golden set labelled from the fixtures — 28 answerable, 12 that must be refused.
+Everything above is a claim. Two harnesses check it.
+
+### `npm run eval` — does the routing and the gate earn their keep?
+
+A 50-case golden set labelled from the fixtures — 36 answerable, 14 that must be refused,
+including ten structural cases and two structural-shaped out-of-domain traps.
 
 Each strategy runs the **real** routing, retrieval, agent and grounding code; only the
 path-selection policy and the gate are swapped. The model is a deterministic fake, so runs
@@ -382,10 +782,47 @@ particular model's fluency.
 
 | Strategy | Routing acc. | False answers | Abstention F1 |
 |---|---|---|---|
-| **Routed (this system)** | **100%** | 3 / 12 | 81.8% |
-| Always vector | 35.7% | 3 / 12 | 56.3% |
-| Always vectorless | 64.3% | **1 / 12** | 73.3% |
-| Random path | 60.7% | 2 / 12 | 66.7% |
+| **Routed (this system)** | **100%** | 3 / 14 | **84.6%** |
+| Always vector | 27.8% | 3 / 14 | 57.9% |
+| Always vectorless | 50.0% | **1 / 14** | 68.4% |
+| Always fused | 22.2% | 5 / 14 | 78.3% |
+| Random path | 47.2% | 2 / 14 | 63.2% |
+
+**Always-fused is the most capable single path and it is not the right answer.** It
+produces five false answers to the router's three. Sending everything down the strongest
+path is not the same as sending each question down the right one; the deterministic pin on
+an exact anchor is still the most reliable component in the system.
+
+### `npm run eval:architectures` — which retrieval algorithm answers the question?
+
+Nine architectures over **seven domains**, offline and deterministic. Full analysis in
+[`ALGORITHM_COMPARISON.md`](./ALGORITHM_COMPARISON.md); raw results in
+`ml/algorithm_comparison.md`.
+
+| Architecture | Correct / 83 | Hold-out F1 | Spread |
+|---|---|---|---|
+| Standard RAG (lexical top-K) | 22 | 0.233 | 0.182 |
+| Dense-embedding RAG | 11 | 0.104 | 0.139 |
+| Hybrid lexical + dense (RRF) | 13 | 0.134 | 0.202 |
+| Deterministic GraphRAG (bespoke handlers) | 28 | 0.233 | **0.399** |
+| Agentic RAG (ReAct, 6 steps) | 43 | 0.233 | 0.131 |
+| Query planner, 9 traversal primitives | 62 | 0.514 | 0.194 |
+| Adaptive planner, 15 operators | 76 | 0.575 | 0.231 |
+| Hybrid fused + graph expansion | 25 | 0.279 | 0.152 |
+| **Hybrid + operator vocabulary (this system)** | **81** | 0.450 | **0.121** |
+
+*Spread* is the gap between an architecture's best and worst domain — a large one means it
+depends on a particular corpus rather than on a general capability.
+
+Only `mediaops` is native to this repository. The other six — aerospace, retail,
+manufacturing, logistics, finance and commerce — are hold-out for every architecture, and
+each has a different topology (a chain, a star, a deep hierarchy, a routing network, a
+directed payments network).
+
+The findings worth carrying: better embeddings fix nothing structural; a ReAct agent
+gathers context at 5.4 tool calls per query and never computes; and hand-written handlers
+score best of any non-planner architecture on the domain they were written for, then lose
+**60%** of it everywhere else — while typed operators *gain* 27%.
 
 *False answers* — answered something the golden set says is unanswerable — is the number
 that matters at 3am.
@@ -601,6 +1038,8 @@ inspectable from outside.
                            "detail": "34 chunks indexed" },
     "vectorless_index":  { "name": "vectorless_index", "status": "up",
                            "detail": "20 records" },
+    "hybrid_index":      { "name": "hybrid_index", "status": "up",
+                           "detail": "68 units, 108 edges, dense + lexical" },
     "ollama_generation": { "name": "openrouter.generation", "status": "up",
                            "latencyMs": 0 },
     "ollama_embedding":  { "name": "llm.embedding", "status": "up", "latencyMs": 0 } },
@@ -657,30 +1096,25 @@ leaks incident detail. See [Security & safety](#security--safety).
 
 ### Agent tools
 
-The ReAct loop's action space is a closed whitelist of two:
+The ReAct loop's action space is a **closed whitelist**: two platform actions plus the
+fifteen typed graph operators covered in
+[Layer 4 — operator search](#layer-4--operator-search-computing-over-the-graph). Anything
+the model emits that is not on the list is not dispatched — it is fed back as a
+format error, so a hallucinated tool name costs a step rather than doing something.
 
 | Tool | Mutating | Behaviour |
 |---|---|---|
 | `check_job_status(id)` | no | Reads the live job record |
 | `restart_render(id)` | **yes** | **Mock** — records intent, mutates nothing |
+| 15 graph operators | no | Read-only computation over the in-memory graph |
+
+The split that matters here is **read versus write**, not traversal versus computation.
+Only one tool in the whole space is mutating, and it is a mock.
 
 Every call is persisted to `copilot.tool_invocation` with a `simulated` flag, so the audit
 trail distinguishes *the agent read something* from *the agent wanted to change
 something*. That column is the seam where a real control-plane call would land, and the
 place a human-confirmation step would be enforced.
-
-### Retrieval order on the deterministic path
-
-Vectorless is two retrievers behind one interface, tried in order:
-
-1. **Exact anchor hits** — the job record and the glossary entry for each resolved
-   anchor. If a job has a `failure_reason`, the matching glossary entry is pulled in
-   too, so `why did job 482 fail` resolves the record *and* follows the failure into the
-   glossary in one hop, with no model call and no similarity search.
-2. **BM25**, only when no anchor resolved, subject to both floors described above.
-
-The ordering is the point: an exact hit is not scored against a floor, because a primary
-key match has no similarity to be uncertain about.
 
 ### What lands in Postgres
 
@@ -864,7 +1298,7 @@ crash, never guess.**
 | Hosted provider unreachable | Generation retries on local Ollama | Answer served; `/health` notes the degradation |
 | Both runtimes unreachable | Vectorless returns the raw record as a templated answer | `degraded: true`, rationale explains why |
 | One model tag missing | Action space masked; the arm is **not** penalised | The surviving arm |
-| Embedding model down | Vector path disabled, all queries forced vectorless | Amber pill; open-ended queries may abstain |
+| Embedding model down | Vector path disabled; queries pinned to the fused path, which still covers records and prose lexically and by traversal | Amber pill; purely semantic phrasings may abstain |
 | Retrieval below floor | Abstain + escalation hint, penalty applied | Amber "I don't know" row |
 | Phantom citation | Answer replaced by abstention | Explanation naming the invalid citation |
 | Agent budget exhausted | Abstain rather than force an answer | Rationale states the budget |
@@ -897,6 +1331,9 @@ worse than a red one.
 | `api` | 34 | Route contracts; 400/404/409/413; the rationale shape the console destructures; jsonb round-trip fidelity; **model down → 200 + `degraded`**; empty index → forced vectorless; reward series ordering; the tRPC surface |
 | `bandit` | 25 | Reward arithmetic incl. negatives; incremental-mean correctness; **rated-pull vs pull division**; ε=0 exploits, ε=1 explores; optimistic init sweeps every arm; masking survives ε=1; per-state independence; persistence across restarts |
 | `retrieval` | 25 | Both canonical examples; both BM25 floors; anchor resolution; hard-rule ordering |
+| `graph` | 27 | Typed graph invariants; temporal edge validity; all 15 operators; operator-call parsing; the same operators over a second, unrelated domain |
+| `hybrid` | 16 | RRF rank-only fusion; MMR diversification; graph expansion and hop provenance; degraded-embedder coverage; OOD abstention; structural routing |
+| `domains` | 38 | Every registered domain builds cleanly; no undeclared edge types; every benchmark answer key still resolves; the aerospace reconstruction's published figures; typed centrality and component detection |
 | `grounding` | 20 | Phantom citation → abstain; High/Medium banding; overlap cannot be inflated by repetition |
 | `agent` | 18 | ReAct parsing; multi-line answers; tool whitelist; step budget; prompt-injection containment |
 | `classifier` | 13 | Feature contract; per-class prediction; signed attributions |
@@ -1020,9 +1457,9 @@ apps/
     src/
       index.ts                  Hono app, appRouter, REST mounts, boot, fatal handlers
       trpc.ts                   router · publicProcedure · operatorProcedure
-      context.ts                composition root (llm · retrievers · bandit · grounder)
+      context.ts                composition root (generator · embedder · retrievers · bandit · grounder)
       config.ts
-      connections/              db · ollama · openrouter · hybrid · llmFactory · llmFake
+      connections/              db · http · ollama · openrouter · llmFactory · llmFake
       otel/                     sdk · bootstrap · middleware · metrics · spans · logBridge
       utils/                    logger · metrics · stopwords · circuitBreaker
       scripts/                  generateDataset
