@@ -52,6 +52,26 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # api.test.ts boots the full context, which syncs the MediaOps graph, and
+      # the domain/hybrid suites query it directly. The GDS plugin is not
+      # optional: operators.ts calls gds.pageRank/betweenness/wcc.
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/copilotgraph
+          NEO4J_PLUGINS: '["graph-data-science"]'
+          NEO4J_dbms_security_procedures_unrestricted: gds.*
+          NEO4J_dbms_security_procedures_allowlist: gds.*
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 30s
+
     env:
       # Only what differs from the code defaults, plus the credentials that have
       # to match the `postgres` service block above. DB_CLIENT, DB_PORT and
@@ -61,8 +81,10 @@ jobs:
       DB_PASSWORD: copilot
       DB_DATABASE: mediaops_test
       # A green run that skipped every database-backed suite is worse than a red
-      # one. This makes an unreachable Postgres fail loudly instead of silently.
+      # one. These make an unreachable dependency fail loudly instead of
+      # silently skipping the suites that need it.
       REQUIRE_POSTGRES: 'true'
+      REQUIRE_NEO4J: 'true'
 
     steps:
       - uses: actions/checkout@v4

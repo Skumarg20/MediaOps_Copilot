@@ -7,10 +7,13 @@ import { buildContext, setContext, type AppContext } from '@/context.js';
 import { createApp } from '@/index.js';
 import type { QueryResponse } from '@/types.js';
 import { createTestDb, destroyTestDb, isPostgresAvailable, skipReason } from './helpers/db.js';
+import { closeGraph, isNeo4jAvailable, neo4jSkipReason } from './helpers/neo4j.js';
 
 const hasPostgres = await isPostgresAvailable();
+// buildContext() syncs the MediaOps graph, so this suite needs Neo4j as much as Postgres.
+const hasNeo4j = await isNeo4jAvailable();
 
-describe.skipIf(!hasPostgres)('api', () => {
+describe.skipIf(!hasPostgres || !hasNeo4j)('api', () => {
 	let db: Knex;
 	let app: Hono;
 	let ctx: AppContext;
@@ -24,6 +27,7 @@ describe.skipIf(!hasPostgres)('api', () => {
 	afterAll(async () => {
 		setContext(null);
 		await destroyTestDb(db);
+		await closeGraph();
 	});
 
 	async function useContext(opts: { llm?: FakeLlmAdapter; epsilon?: number } = {}): Promise<AppContext> {
@@ -491,8 +495,8 @@ describe.skipIf(!hasPostgres)('api', () => {
 	});
 });
 
-if (!hasPostgres) {
+if (!hasPostgres || !hasNeo4j) {
 	describe('api', () => {
-		it.skip(`skipped — ${skipReason()}`, () => {});
+		it.skip(`skipped — ${hasPostgres ? neo4jSkipReason() : skipReason()}`, () => {});
 	});
 }

@@ -1,3 +1,4 @@
+import { config } from '@/config.js';
 import { closeNeo4j, pingNeo4j } from '@/connections/neo4j.js';
 import { Neo4jGraph, type DomainDataset } from '@/modules/graph/index.js';
 
@@ -5,11 +6,16 @@ let cached: boolean | null = null;
 
 export async function isNeo4jAvailable(): Promise<boolean> {
 	if (cached === null) cached = await pingNeo4j();
+
+	if (!cached && process.env.REQUIRE_NEO4J === 'true') {
+		throw new Error(`REQUIRE_NEO4J is set but ${neo4jSkipReason()}`);
+	}
+
 	return cached;
 }
 
 export function neo4jSkipReason(): string {
-	return 'Neo4j is not reachable. Start it with `docker compose up -d neo4j`.';
+	return `Neo4j is not reachable at ${config.neo4j.url}. Start it with \`docker compose up -d neo4j\`.`;
 }
 
 export async function syncDomain(dataset: DomainDataset): Promise<Neo4jGraph> {
