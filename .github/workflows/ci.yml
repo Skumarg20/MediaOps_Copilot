@@ -179,25 +179,54 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: smoke test the api image against real postgres
+      - name: smoke test the api image against real postgres and neo4j
         run: |
           docker network create smoke
           docker run -d --name smoke-db --network smoke \
             -e POSTGRES_USER=copilot -e POSTGRES_PASSWORD=copilot -e POSTGRES_DB=mediaops \
             postgres:16-alpine
+
+          # main() awaits buildContext(), which syncs the graph, before it ever
+          # calls serve() — so without Neo4j the image exits 1 at boot and the
+          # curl loop below just watches a dead container. Same topology as
+          # docker-compose.yml, GDS plugin included.
+          docker run -d --name smoke-graph --network smoke \
+            -e NEO4J_AUTH=neo4j/copilotgraph \
+            -e NEO4J_PLUGINS='["graph-data-science"]' \
+            -e NEO4J_dbms_security_procedures_unrestricted=gds.* \
+            -e NEO4J_dbms_security_procedures_allowlist=gds.* \
+            neo4j:5-community
+
           for i in $(seq 1 30); do
             if docker exec smoke-db pg_isready -U copilot -d mediaops; then break; fi
             sleep 2
           done
 
+          # Bolt, not HTTP: an authenticated query is what the driver actually
+          # needs, and Neo4j serves 7474 before it will answer on 7687.
+          for i in $(seq 1 60); do
+            if docker exec smoke-graph cypher-shell -u neo4j -p copilotgraph 'RETURN 1' >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
           docker run -d --name api-smoke --network smoke -p 8080:8080 \
             -e DB_HOST=smoke-db -e DB_USER=copilot -e DB_PASSWORD=copilot -e DB_DATABASE=mediaops \
+            -e NEO4J_URL=bolt://smoke-graph:7687 \
             mediaops-copilot-api:${{ github.sha }}
 
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8080/health > /tmp/health.json; then break; fi
             sleep 2
           done
+
+          # A crashed container leaves /tmp/health.json empty, and the JSON
+          # parse below then fails with a stack trace that says nothing about
+          # why. Show the logs instead.
+          if [ ! -s /tmp/health.json ]; then
+            echo "::error::the api container never served /health" >&2
+            docker logs api-smoke >&2 || true
+            exit 1
+          fi
           cat /tmp/health.json
 
           # Degraded is the expected state here: there is no Ollama in CI, and
@@ -210,12 +239,15 @@ jobs:
           # would be reachable but every table missing, which reads as 'up'.
           node -e "const c=require('/tmp/health.json').checks; if(c.postgres.status!=='up') throw new Error('postgres not up')"
 
+          # The graph synced at boot, not merely that the driver connected.
+          node -e "const c=require('/tmp/health.json').checks; if(c.neo4j.status!=='up') throw new Error('neo4j not up: '+JSON.stringify(c.neo4j))"
+
           curl -fsS -X POST http://localhost:8080/query \
             -H 'content-type: application/json' \
             -d '{"query":"what does error code RENDER_TIMEOUT mean"}' | tee /tmp/query.json
           node -e "const r=require('/tmp/query.json'); if(r.retrieval_path!=='vectorless') throw new Error('expected the deterministic path for an exact error-code match')"
 
-          docker rm -f api-smoke smoke-db
+          docker rm -f api-smoke smoke-db smoke-graph
           docker network rm smoke
 
   deploy:

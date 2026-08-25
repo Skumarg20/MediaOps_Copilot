@@ -1420,7 +1420,7 @@ against the code as it was:
 | `lint` | eslint + `tsc --noEmit`, both workspaces |
 | `test` | Both suites against real Postgres 16 and Neo4j 5 (with the GDS plugin) services, with `REQUIRE_POSTGRES=true` and `REQUIRE_NEO4J=true` so a skipped suite is a red build |
 | `ml` | `pip install -r requirements.txt`, regenerate the dataset, retrain with scikit-learn, **fail if the committed CSV is stale**, re-run the classifier suite against the retrained model |
-| `build` | Build both Docker images, then smoke-test the API image against real Postgres: `/health` must not be `down`, migrations must have applied, and an error-code query must take the `vectorless` path |
+| `build` | Build both Docker images, then smoke-test the API image against real Postgres and Neo4j: `/health` must not be `down`, migrations must have applied, the graph must have synced, and an error-code query must take the `vectorless` path |
 | `deploy` | Mock deploy, gated on `main` and on the tests passing |
 
 ---
